@@ -79,3 +79,25 @@ object StreamingTest {
 3> (he,2)  
 4> (hello,3)  
 3> (bye,3)  
+
+## 流处理API
+### Environmeng
+- `getExecutionEnvironment()`
+> 创建一个执行环境，表示当前执行程序的上下文，会根据运行方式返回不同的执行环境：
+- createLocalEnvironment()
+- createRemoteEnvironment(host: String, port: Int, jarFiles: String*)
+
+### Source
+- 从集合读取数据
+- 从文件读取数据
+- 从kafka读取数据
+- 自定义Source
+### Transform
+- 简单转换算子
+- 简单分组聚合
+- reduce聚合
+- 分流操作
+- 合流操作
+### Sink
+
+## Window

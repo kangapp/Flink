@@ -101,3 +101,8 @@ object StreamingTest {
 ### Sink
 
 ## Window
+
+## Time
+### 语义
+- Event Time
+- Processing Time

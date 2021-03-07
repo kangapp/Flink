@@ -106,3 +106,170 @@ object StreamingTest {
 ### 语义
 - Event Time
 - Processing Time
+
+## Table API & SQL
+
+### TableEnvironment
+> The TableEnvironment is a central concept of the Table API and SQL integration
+- 在内部catalog中注册表
+- 注册catalogs
+- 加载可插拔的模块
+- 执行sql查询
+- 注册用户自定义函数
+- 将DataStream或DataSet转化为Table
+- 持有对`ExecutionEnvironment`或`StreamExecutionEnvironment`的引用
+
+#### 用不同的planner创建TableEnvironment
+```scala
+// **********************
+// FLINK STREAMING QUERY
+// **********************
+import org.apache.flink.streaming.api.scala.StreamExecutionEnvironment
+import org.apache.flink.table.api.EnvironmentSettings
+import org.apache.flink.table.api.bridge.scala.StreamTableEnvironment
+
+val fsSettings = EnvironmentSettings.newInstance().useOldPlanner().inStreamingMode().build()
+val fsEnv = StreamExecutionEnvironment.getExecutionEnvironment
+val fsTableEnv = StreamTableEnvironment.create(fsEnv, fsSettings)
+// or val fsTableEnv = TableEnvironment.create(fsSettings)
+
+// ******************
+// FLINK BATCH QUERY
+// ******************
+import org.apache.flink.api.scala.ExecutionEnvironment
+import org.apache.flink.table.api.bridge.scala.BatchTableEnvironment
+
+val fbEnv = ExecutionEnvironment.getExecutionEnvironment
+val fbTableEnv = BatchTableEnvironment.create(fbEnv)
+
+// **********************
+// BLINK STREAMING QUERY
+// **********************
+import org.apache.flink.streaming.api.scala.StreamExecutionEnvironment
+import org.apache.flink.table.api.EnvironmentSettings
+import org.apache.flink.table.api.bridge.scala.StreamTableEnvironment
+
+val bsEnv = StreamExecutionEnvironment.getExecutionEnvironment
+val bsSettings = EnvironmentSettings.newInstance().useBlinkPlanner().inStreamingMode().build()
+val bsTableEnv = StreamTableEnvironment.create(bsEnv, bsSettings)
+// or val bsTableEnv = TableEnvironment.create(bsSettings)
+
+// ******************
+// BLINK BATCH QUERY
+// ******************
+import org.apache.flink.table.api.{EnvironmentSettings, TableEnvironment}
+
+val bbSettings = EnvironmentSettings.newInstance().useBlinkPlanner().inBatchMode().build()
+val bbTableEnv = TableEnvironment.create(bbSettings)
+```
+
+### Table
+`identifier`
+> A TableEnvironment maintains a map of catalogs of tables which are created with an identifier. Each identifier consists of 3 parts: catalog name, database name and object name   
+Tables can be either virtual (VIEWS) or regular (TABLES). VIEWS can be created from an existing Table object, usually the result of a Table API or SQL query. TABLES describe external data, such as a file, database table, or message queue.
+
+#### 创建表
+- Virtual Tables
+```scala
+// get a TableEnvironment
+val tableEnv = ... // see "Create a TableEnvironment" section
+
+// table is the result of a simple projection query 
+val projTable: Table = tableEnv.from("X").select(...)
+
+// register the Table projTable as table "projectedTable"
+tableEnv.createTemporaryView("projectedTable", projTable)
+```
+- Connector Tables
+```
+tableEnvironment
+  .connect(...)
+  .withFormat(...)
+  .withSchema(...)
+  .inAppendMode()
+  .createTemporaryTable("MyTable")
+```
+
+#### 查询表
+- Table API
+```scala
+// get a TableEnvironment
+val tableEnv = ... // see "Create a TableEnvironment" section
+
+// register Orders table
+
+// scan registered Orders table
+val orders = tableEnv.from("Orders")
+// compute revenue for all customers from France
+val revenue = orders
+  .filter($"cCountry" === "FRANCE")
+  .groupBy($"cID", $"cName")
+  .select($"cID", $"cName", $"revenue".sum AS "revSum")
+```
+- SQL
+```scala
+// get a TableEnvironment
+val tableEnv = ... // see "Create a TableEnvironment" section
+
+// register Orders table
+
+// compute revenue for all customers from France
+val revenue = tableEnv.sqlQuery("""
+  |SELECT cID, cName, SUM(revenue) AS revSum
+  |FROM Orders
+  |WHERE cCountry = 'FRANCE'
+  |GROUP BY cID, cName
+  """.stripMargin)
+```
+
+### 集成DataStreamhe和DataSet
+- 创建临时视图
+```scala
+// get TableEnvironment 
+// registration of a DataSet is equivalent
+val tableEnv: StreamTableEnvironment = ... // see "Create a TableEnvironment" section
+
+val stream: DataStream[(Long, String)] = ...
+
+// register the DataStream as View "myTable" with fields "f0", "f1"
+tableEnv.createTemporaryView("myTable", stream)
+
+// register the DataStream as View "myTable2" with fields "myLong", "myString"
+tableEnv.createTemporaryView("myTable2", stream, 'myLong, 'myString)
+```
+- 转化成表
+```scala
+// get TableEnvironment
+// registration of a DataSet is equivalent
+val tableEnv = ... // see "Create a TableEnvironment" section
+
+val stream: DataStream[(Long, String)] = ...
+
+// convert the DataStream into a Table with default fields "_1", "_2"
+val table1: Table = tableEnv.fromDataStream(stream)
+
+// convert the DataStream into a Table with fields "myLong", "myString"
+val table2: Table = tableEnv.fromDataStream(stream, $"myLong", $"myString")
+```
+- 转化成DataStream或DataSet
+```scala
+// get TableEnvironment. 
+// registration of a DataSet is equivalent
+val tableEnv: StreamTableEnvironment = ... // see "Create a TableEnvironment" section
+
+// Table with two fields (String name, Integer age)
+val table: Table = ...
+
+// convert the Table into an append DataStream of Row
+val dsRow: DataStream[Row] = tableEnv.toAppendStream[Row](table)
+
+// convert the Table into an append DataStream of Tuple2[String, Int]
+val dsTuple: DataStream[(String, Int)] dsTuple = 
+  tableEnv.toAppendStream[(String, Int)](table)
+
+// convert the Table into a retract DataStream of Row.
+//   A retract stream of type X is a DataStream[(Boolean, X)]. 
+//   The boolean field indicates the type of the change. 
+//   True is INSERT, false is DELETE.
+val retractStream: DataStream[(Boolean, Row)] = tableEnv.toRetractStream[Row](table)
+```

@@ -13,7 +13,9 @@
 - 高可用，动态扩展
 
 
-## 案例演示
+## 官网案例演示
+
+- [欺诈检测系统](https://github.com/kangapp/Flink/tree/master/example/FraudDetection)
 - 批处理wordcount
 ```scala
 package com.test.flink

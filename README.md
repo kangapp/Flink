@@ -16,6 +16,7 @@
 ## 官网案例演示
 
 - [欺诈检测系统](https://github.com/kangapp/Flink/tree/master/example/FraudDetection)
+- [实时报表系统](https://github.com/kangapp/Flink/tree/master/example/Reporting)
 - 批处理wordcount
 ```scala
 package com.test.flink

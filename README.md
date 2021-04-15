@@ -126,6 +126,7 @@ object StreamingTest {
 
 ### 大体结构
 - Keyed Windows
+>  Having a keyed stream will allow your windowed computation to be performed in parallel by multiple tasks
 ```scala
 stream
        .keyBy(...)               <-  keyed versus non-keyed windows
@@ -138,6 +139,7 @@ stream
       [.getSideOutput(...)]      <-  optional: "output tag"
 ```
 - Non-Keyed Windows
+> your original stream will not be split into multiple logical streams and all the windowing logic will be performed by a single task
 ```scala
 stream
        .windowAll(...)           <-  required: "assigner"
@@ -157,6 +159,215 @@ stream
 >each window will have a Trigger and a function (ProcessWindowFunction, ReduceFunction, or AggregateFunction) attached to it
 - Evictor
 >emove elements from the window after the trigger fires and before and/or after the function is applied.
+
+### Window Assigners
+> The window assigner defines how elements are assigned to windows
+#### 使用
+- window(...) (for keyed streams)
+- windowAll() (for non-keyed streams)
+#### 类型
+- tumbling windows
+```scala
+val input: DataStream[T] = ...
+
+// tumbling event-time windows
+input
+    .keyBy(<key selector>)
+    .window(TumblingEventTimeWindows.of(Time.seconds(5)))
+    .<windowed transformation>(<window function>)
+
+// tumbling processing-time windows
+input
+    .keyBy(<key selector>)
+    .window(TumblingProcessingTimeWindows.of(Time.seconds(5)))
+    .<windowed transformation>(<window function>)
+
+// daily tumbling event-time windows offset by -8 hours.
+input
+    .keyBy(<key selector>)
+    .window(TumblingEventTimeWindows.of(Time.days(1), Time.hours(-8)))
+    .<windowed transformation>(<window function>)
+```
+- sliding windows
+```scala
+val input: DataStream[T] = ...
+
+// sliding event-time windows
+input
+    .keyBy(<key selector>)
+    .window(SlidingEventTimeWindows.of(Time.seconds(10), Time.seconds(5)))
+    .<windowed transformation>(<window function>)
+
+// sliding processing-time windows
+input
+    .keyBy(<key selector>)
+    .window(SlidingProcessingTimeWindows.of(Time.seconds(10), Time.seconds(5)))
+    .<windowed transformation>(<window function>)
+
+// sliding processing-time windows offset by -8 hours
+input
+    .keyBy(<key selector>)
+    .window(SlidingProcessingTimeWindows.of(Time.hours(12), Time.hours(1), Time.hours(-8)))
+    .<windowed transformation>(<window function>)
+```
+- session windows
+```scala
+val input: DataStream[T] = ...
+
+// event-time session windows with static gap
+input
+    .keyBy(<key selector>)
+    .window(EventTimeSessionWindows.withGap(Time.minutes(10)))
+    .<windowed transformation>(<window function>)
+
+// event-time session windows with dynamic gap
+input
+    .keyBy(<key selector>)
+    .window(EventTimeSessionWindows.withDynamicGap(new SessionWindowTimeGapExtractor[String] {
+      override def extract(element: String): Long = {
+        // determine and return session gap
+      }
+    }))
+    .<windowed transformation>(<window function>)
+
+// processing-time session windows with static gap
+input
+    .keyBy(<key selector>)
+    .window(ProcessingTimeSessionWindows.withGap(Time.minutes(10)))
+    .<windowed transformation>(<window function>)
+
+
+// processing-time session windows with dynamic gap
+input
+    .keyBy(<key selector>)
+    .window(DynamicProcessingTimeSessionWindows.withDynamicGap(new SessionWindowTimeGapExtractor[String] {
+      override def extract(element: String): Long = {
+        // determine and return session gap
+      }
+    }))
+    .<windowed transformation>(<window function>)
+```
+- global windows
+```scala
+val input: DataStream[T] = ...
+
+input
+    .keyBy(<key selector>)
+    .window(GlobalWindows.create())
+    .<windowed transformation>(<window function>)
+```
+### Window Functions
+#### ReduceFunction
+> A ReduceFunction specifies how two elements from the input are combined to produce an output element of the same type
+```scala
+val input: DataStream[(String, Long)] = ...
+
+input
+    .keyBy(<key selector>)
+    .window(<window assigner>)
+    .reduce { (v1, v2) => (v1._1, v1._2 + v2._2) }
+```
+#### AggregateFunction
+```scala
+/**
+ * The accumulator is used to keep a running sum and a count. The [getResult] method
+ * computes the average.
+ */
+class AverageAggregate extends AggregateFunction[(String, Long), (Long, Long), Double] {
+  override def createAccumulator() = (0L, 0L)
+
+  override def add(value: (String, Long), accumulator: (Long, Long)) =
+    (accumulator._1 + value._2, accumulator._2 + 1L)
+
+  override def getResult(accumulator: (Long, Long)) = accumulator._1 / accumulator._2
+
+  override def merge(a: (Long, Long), b: (Long, Long)) =
+    (a._1 + b._1, a._2 + b._2)
+}
+
+val input: DataStream[(String, Long)] = ...
+
+input
+    .keyBy(<key selector>)
+    .window(<window assigner>)
+    .aggregate(new AverageAggregate)
+```
+#### ProcessWindowFunction
+>A ProcessWindowFunction gets an Iterable containing all the elements of the window, and a Context object with access to time and state information
+- 概览
+```scala
+public abstract class ProcessWindowFunction<IN, OUT, KEY, W extends Window> implements Function {
+
+    /**
+     * Evaluates the window and outputs none or several elements.
+     *
+     * @param key The key for which this window is evaluated.
+     * @param context The context in which the window is being evaluated.
+     * @param elements The elements in the window being evaluated.
+     * @param out A collector for emitting elements.
+     *
+     * @throws Exception The function may throw exceptions to fail the program and trigger recovery.
+     */
+    public abstract void process(
+            KEY key,
+            Context context,
+            Iterable<IN> elements,
+            Collector<OUT> out) throws Exception;
+
+   	/**
+   	 * The context holding window metadata.
+   	 */
+   	public abstract class Context implements java.io.Serializable {
+   	    /**
+   	     * Returns the window that is being evaluated.
+   	     */
+   	    public abstract W window();
+
+   	    /** Returns the current processing time. */
+   	    public abstract long currentProcessingTime();
+
+   	    /** Returns the current event-time watermark. */
+   	    public abstract long currentWatermark();
+
+   	    /**
+   	     * State accessor for per-key and per-window state.
+   	     *
+   	     * <p><b>NOTE:</b>If you use per-window state you have to ensure that you clean it up
+   	     * by implementing {@link ProcessWindowFunction#clear(Context)}.
+   	     */
+   	    public abstract KeyedStateStore windowState();
+
+   	    /**
+   	     * State accessor for per-key global state.
+   	     */
+   	    public abstract KeyedStateStore globalState();
+   	}
+
+}
+```
+- 使用案例
+```scala
+val input: DataStream[(String, Long)] = ...
+
+input
+  .keyBy(_._1)
+  .window(TumblingEventTimeWindows.of(Time.minutes(5)))
+  .process(new MyProcessWindowFunction())
+
+/* ... */
+
+class MyProcessWindowFunction extends ProcessWindowFunction[(String, Long), String, String, TimeWindow] {
+
+  def process(key: String, context: Context, input: Iterable[(String, Long)], out: Collector[String]) = {
+    var count = 0L
+    for (in <- input) {
+      count = count + 1
+    }
+    out.collect(s"Window ${context.window} count: $count")
+  }
+}
+```
+#### ProcessWindowFunction with Incremental Aggregation
 
 ## Time
 ### 语义

@@ -83,33 +83,94 @@ object StreamingTest {
 4> (hello,3)  
 3> (bye,3)  
 
-## 流处理API
+## DataStream API
+### [官网案例](https://github.com/kangapp/Flink/tree/master/example/DataStream)
+
+### Flink程序组成
+- Obtain an execution environment
+- Load/create the initial data
+- Specify transformations on this data
+- Specify where to put the results of your computations
+- Trigger the program execution
 ### Environmeng
 - `getExecutionEnvironment()`
 > 创建一个执行环境，表示当前执行程序的上下文，会根据运行方式返回不同的执行环境：
 - createLocalEnvironment()
 - createRemoteEnvironment(host: String, port: Int, jarFiles: String*)
 
-### Source
-- 从集合读取数据
-- 从文件读取数据
-- 从kafka读取数据
-- 自定义Source
+### Data Source
+#### 基于文件
+- `readTextFile(path)`
+#### 基于Socket
+- `socketTextStream`
+#### 基于集合
+- `fromCollection() `
+#### 自定义Source addSource()
+- `SourceFunction` 
+- `ParallelSourceFunction`
+- `RichParallelSourceFunction`
+- connectors
 ### Transform
-- 简单转换算子
-- 简单分组聚合
-- reduce聚合
-- 分流操作
-- 合流操作
+- 简单转换算子(DataStream → DataStream)
+- 分组(DataStream → KeyedStream)
+- 分组聚合(KeyedStream → DataStream)
+- 窗口函数(KeyedStream → WindowedStream,DataStream → AllWindowedStream)
+- 分流操作(ConnectedStreams → DataStream)
+- 合流操作(DataStream,DataStream → ConnectedStreams)
+- [更多](https://ci.apache.org/projects/flink/flink-docs-release-1.12/dev/stream/operators/#datastream-transformations)
 ### Sink
-
+- `writeAsText()`
+- `print()`
+- `addSink()`
 ## Window
+
+### 大体结构
+- Keyed Windows
+```scala
+stream
+       .keyBy(...)               <-  keyed versus non-keyed windows
+       .window(...)              <-  required: "assigner"
+      [.trigger(...)]            <-  optional: "trigger" (else default trigger)
+      [.evictor(...)]            <-  optional: "evictor" (else no evictor)
+      [.allowedLateness(...)]    <-  optional: "lateness" (else zero)
+      [.sideOutputLateData(...)] <-  optional: "output tag" (else no side output for late data)
+       .reduce/aggregate/fold/apply()      <-  required: "function"
+      [.getSideOutput(...)]      <-  optional: "output tag"
+```
+- Non-Keyed Windows
+```scala
+stream
+       .windowAll(...)           <-  required: "assigner"
+      [.trigger(...)]            <-  optional: "trigger" (else default trigger)
+      [.evictor(...)]            <-  optional: "evictor" (else no evictor)
+      [.allowedLateness(...)]    <-  optional: "lateness" (else zero)
+      [.sideOutputLateData(...)] <-  optional: "output tag" (else no side output for late data)
+       .reduce/aggregate/fold/apply()      <-  required: "function"
+      [.getSideOutput(...)]      <-  optional: "output tag"
+```
+### 生命周期
+- created 
+>window is created as soon as the first element that should belong to this window arrives
+- removed 
+>window is completely removed when the time (event or processing time) passes its end timestamp plus the user-specified allowed lateness
+- Trigger
+>each window will have a Trigger and a function (ProcessWindowFunction, ReduceFunction, or AggregateFunction) attached to it
+- Evictor
+>emove elements from the window after the trigger fires and before and/or after the function is applied.
 
 ## Time
 ### 语义
 - Event Time
+> In event time, the progress of time depends on the data, not on any wall clocks.Event time programs must specify how to generate Event Time Watermarks, which is the mechanism that signals progress in event time
 - Processing Time
-
+> use the system clock of the machines
+### Watermarks
+> The mechanism in Flink to measure progress in event time is watermarks. Watermarks flow as part of the data stream and carry a timestamp
+#### Watermarks in Parallel Streams  
+- Watermarks are generated at, or directly after, source functions. Each parallel subtask of a source function usually generates its watermarks `independently`  
+- Some operators consume multiple input streams; a union, for example, or operators following a keyBy(…) or partition(…) function. Such an operator’s current event time is the `minimum` of its input streams’ event times
+### Lateness
+### Windowing
 ## Table API & SQL
 
 ### TableEnvironment

@@ -430,6 +430,9 @@ class MyProcessWindowFunction extends ProcessWindowFunction[Double, (String, Dou
 - globalState(), which allows access to keyed state that is not scoped to a window
 - windowState(), which allows access to keyed state that is also scoped to the window
 
+### Triggers
+> 触发器（Trigger）决定了何时启动窗口函数来处理窗口数据以及何时将窗口内的数据清理干净.每一个WindowAssigner 都带有默认的触发器
+
 ## Time
 ### 语义
 - Event Time

@@ -368,6 +368,67 @@ class MyProcessWindowFunction extends ProcessWindowFunction[(String, Long), Stri
 }
 ```
 #### ProcessWindowFunction with Incremental Aggregation
+- Incremental Window Aggregation with ReduceFunction
+```scala
+val input: DataStream[SensorReading] = ...
+
+input
+  .keyBy(<key selector>)
+  .window(<window assigner>)
+  .reduce(
+    (r1: SensorReading, r2: SensorReading) => { if (r1.value > r2.value) r2 else r1 },
+    ( key: String,
+      context: ProcessWindowFunction[_, _, _, TimeWindow]#Context,
+      minReadings: Iterable[SensorReading],
+      out: Collector[(Long, SensorReading)] ) =>
+      {
+        val min = minReadings.iterator.next()
+        out.collect((context.window.getStart, min))
+      }
+  )
+```
+- Incremental Window Aggregation with AggregateFunction
+```scala
+val input: DataStream[(String, Long)] = ...
+
+input
+  .keyBy(<key selector>)
+  .window(<window assigner>)
+  .aggregate(new AverageAggregate(), new MyProcessWindowFunction())
+
+// Function definitions
+
+/**
+ * The accumulator is used to keep a running sum and a count. The [getResult] method
+ * computes the average.
+ */
+class AverageAggregate extends AggregateFunction[(String, Long), (Long, Long), Double] {
+  override def createAccumulator() = (0L, 0L)
+
+  override def add(value: (String, Long), accumulator: (Long, Long)) =
+    (accumulator._1 + value._2, accumulator._2 + 1L)
+
+  override def getResult(accumulator: (Long, Long)) = accumulator._1 / accumulator._2
+
+  override def merge(a: (Long, Long), b: (Long, Long)) =
+    (a._1 + b._1, a._2 + b._2)
+}
+
+class MyProcessWindowFunction extends ProcessWindowFunction[Double, (String, Double), String, TimeWindow] {
+
+  def process(key: String, context: Context, averages: Iterable[Double], out: Collector[(String, Double)]) = {
+    val average = averages.iterator.next()
+    out.collect((key, average))
+  }
+}
+```
+#### Using per-window state in ProcessWindowFunction
+> ProcessWindowFunction不仅可以使用keyed state（富函数都可以使用），还可以使用window范围的keyed state，窗口State指向不同的window
+- The window that was defined when specifying the windowed operation: This might be tumbling windows of 1 hour or sliding windows of 2 hours that slide by 1 hour.
+- An actual instance of a defined window for a given key: This might be time window from 12:00 to 13:00 for user-id xyz. This is based on the window definition and there will be many windows based on the number of keys that the job is currently processing and based on what time slots the events fall into.
+> There are two methods on the Context object that a process() invocation receives that allow access to the two types of state:
+- globalState(), which allows access to keyed state that is not scoped to a window
+- windowState(), which allows access to keyed state that is also scoped to the window
 
 ## Time
 ### 语义

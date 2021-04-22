@@ -431,7 +431,50 @@ class MyProcessWindowFunction extends ProcessWindowFunction[Double, (String, Dou
 - windowState(), which allows access to keyed state that is also scoped to the window
 
 ### Triggers
-> 触发器（Trigger）决定了何时启动窗口函数来处理窗口数据以及何时将窗口内的数据清理干净.每一个WindowAssigner 都带有默认的触发器
+#### 触发器（Trigger）针对不同事件有不同的方法
+- The onElement() method is called for each element that is added to a window.
+- The onEventTime() method is called when a registered event-time timer fires.
+- The onProcessingTime() method is called when a registered processing-time timer fires.
+- The onMerge() method is relevant for stateful triggers and merges the states of two triggers when their corresponding windows merge, e.g. when using session windows.
+- clear() method performs any action needed upon removal of the corresponding window.
+#### `TriggerResult`返回的动作
+- CONTINUE: do nothing
+- FIRE: trigger the computation
+- PURGE: clear the elements in the window
+- FIRE_AND_PURGE: trigger the computation and clear the elements in the window afterwards
+#### 内置Trigger
+- EventTimeTrigger 
+- ProcessingTimeTrigger 
+- CountTrigger 
+- PurgingTrigger 
+
+### Evictors
+#### evictor可以在窗口函数调用前后从window移除元素
+- evictBefore()
+- evictAfter
+#### 内置evictors
+- CountEvictor
+- DeltaEvictor
+- TimeEvictor
+
+### Allowed Lateness
+> 指定允许元素迟到的时间长度，迟到但未丢失的数据可能会使window重新触发，例如EventTimeTrigger
+### side output
+> 用于配置迟到元素的输出
+```scala
+val lateOutputTag = OutputTag[T]("late-data")
+
+val input: DataStream[T] = ...
+
+val result = input
+    .keyBy(<key selector>)
+    .window(<window assigner>)
+    .allowedLateness(<time>)
+    .sideOutputLateData(lateOutputTag)
+    .<windowed transformation>(<window function>)
+
+val lateStream = result.getSideOutput(lateOutputTag)
+```
 
 ## Time
 ### 语义

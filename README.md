@@ -43,6 +43,9 @@
     - [Watermarks](#watermarks)
       - [Watermarks in Parallel Streams](#watermarks-in-parallel-streams)
       - [介绍Watermark Strategies](#介绍watermark-strategies)
+      - [Using Watermark Strategies](#using-watermark-strategies)
+      - [处理空闲数据源](#处理空闲数据源)
+      - [Writing WatermarkGenerators](#writing-watermarkgenerators)
     - [Lateness](#lateness)
     - [Windowing](#windowing)
   - [Table API & SQL](#table-api--sql)
@@ -636,6 +639,88 @@ WatermarkStrategy
   .withTimestampAssigner(new SerializableTimestampAssigner[(Long, String)] {
     override def extractTimestamp(element: (Long, String), recordTimestamp: Long): Long = element._1
   })
+```
+#### Using Watermark Strategies
+> WatermarkStrategy在flink程序中可以在两处地方使用：
+- directly on sources
+- after non-source operation
+```scala
+val env = StreamExecutionEnvironment.getExecutionEnvironment
+
+val stream: DataStream[MyEvent] = env.readFile(
+         myFormat, myFilePath, FileProcessingMode.PROCESS_CONTINUOUSLY, 100,
+         FilePathFilter.createDefaultFilter())
+
+val withTimestampsAndWatermarks: DataStream[MyEvent] = stream
+        .filter( _.severity == WARNING )
+        .assignTimestampsAndWatermarks(<watermark strategy>)
+
+withTimestampsAndWatermarks
+        .keyBy( _.getGroup )
+        .window(TumblingEventTimeWindows.of(Time.seconds(10)))
+        .reduce( (a, b) => a.add(b) )
+        .addSink(...)
+```
+#### 处理空闲数据源
+> 当某些分区空闲时，watermark不会更新因为是取所有并行的最小值
+```scala
+WatermarkStrategy
+  .forBoundedOutOfOrderness[(Long, String)](Duration.ofSeconds(20))
+  .withIdleness(Duration.ofMinutes(1))
+```
+#### Writing WatermarkGenerators
+```scala
+public interface WatermarkGenerator<T> {
+
+    /**
+     * Called for every event, allows the watermark generator to examine and remember the
+     * event timestamps, or to emit a watermark based on the event itself.
+     */
+    void onEvent(T event, long eventTimestamp, WatermarkOutput output);
+
+    /**
+     * Called periodically, and might emit a new watermark, or not.
+     *
+     * <p>The interval in which this method is called and Watermarks are generated
+     * depends on {@link ExecutionConfig#getAutoWatermarkInterval()}.
+     */
+    void onPeriodicEmit(WatermarkOutput output);
+}
+```
+- Writing a Periodic WatermarkGenerator
+> watermark产生间隔通过`ExecutionConfig.setAutoWatermarkInterval(...)`来设置
+```scala
+class BoundedOutOfOrdernessGenerator extends AssignerWithPeriodicWatermarks[MyEvent] {
+
+    val maxOutOfOrderness = 3500L // 3.5 seconds
+
+    var currentMaxTimestamp: Long = _
+
+    override def onEvent(element: MyEvent, eventTimestamp: Long): Unit = {
+        currentMaxTimestamp = max(eventTimestamp, currentMaxTimestamp)
+    }
+
+    override def onPeriodicEmit(): Unit = {
+        // emit the watermark as current highest timestamp minus the out-of-orderness bound
+        output.emitWatermark(new Watermark(currentMaxTimestamp - maxOutOfOrderness - 1));
+    }
+}
+```
+- Writing a Punctuated WatermarkGenerator
+> A punctuated watermark generator will observe the stream of events and emit a watermark whenever it sees a special element that carries watermark information.
+```scala
+class PunctuatedAssigner extends AssignerWithPunctuatedWatermarks[MyEvent] {
+
+    override def onEvent(element: MyEvent, eventTimestamp: Long): Unit = {
+        if (event.hasWatermarkMarker()) {
+            output.emitWatermark(new Watermark(event.getWatermarkTimestamp()))
+        }
+    }
+
+    override def onPeriodicEmit(): Unit = {
+        // don't need to do anything because we emit in reaction to events above
+    }
+}
 ```
 ### Lateness
 ### Windowing

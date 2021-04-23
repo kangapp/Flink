@@ -159,6 +159,7 @@ object StreamingTest {
 - `RichParallelSourceFunction`
 - connectors
 ### Transform
+#### Overview
 - 简单转换算子(DataStream → DataStream)
 - 分组(DataStream → KeyedStream)
 - 分组聚合(KeyedStream → DataStream)
@@ -166,6 +167,75 @@ object StreamingTest {
 - 分流操作(ConnectedStreams → DataStream)
 - 合流操作(DataStream,DataStream → ConnectedStreams)
 - [更多](https://ci.apache.org/projects/flink/flink-docs-release-1.12/dev/stream/operators/#datastream-transformations)
+#### Process Function
+> 低级别流处理操作，可以访问基础的构造块
+- events (stream elements)
+- state (fault-tolerant, consistent, only on keyed stream)
+- timers (event time and processing time, only on keyed stream)
+> example
+```scala
+import org.apache.flink.api.common.state.ValueState
+import org.apache.flink.api.common.state.ValueStateDescriptor
+import org.apache.flink.api.java.tuple.Tuple
+import org.apache.flink.streaming.api.functions.KeyedProcessFunction
+import org.apache.flink.util.Collector
+
+// the source data stream
+val stream: DataStream[Tuple2[String, String]] = ...
+
+// apply the process function onto a keyed stream
+val result: DataStream[Tuple2[String, Long]] = stream
+  .keyBy(_._1)
+  .process(new CountWithTimeoutFunction())
+
+/**
+  * The data type stored in the state
+  */
+case class CountWithTimestamp(key: String, count: Long, lastModified: Long)
+
+/**
+  * The implementation of the ProcessFunction that maintains the count and timeouts
+  */
+class CountWithTimeoutFunction extends KeyedProcessFunction[Tuple, (String, String), (String, Long)] {
+
+  /** The state that is maintained by this process function */
+  lazy val state: ValueState[CountWithTimestamp] = getRuntimeContext
+    .getState(new ValueStateDescriptor[CountWithTimestamp]("myState", classOf[CountWithTimestamp]))
+
+
+  override def processElement(
+      value: (String, String), 
+      ctx: KeyedProcessFunction[Tuple, (String, String), (String, Long)]#Context, 
+      out: Collector[(String, Long)]): Unit = {
+
+    // initialize or retrieve/update the state
+    val current: CountWithTimestamp = state.value match {
+      case null =>
+        CountWithTimestamp(value._1, 1, ctx.timestamp)
+      case CountWithTimestamp(key, count, lastModified) =>
+        CountWithTimestamp(key, count + 1, ctx.timestamp)
+    }
+
+    // write the state back
+    state.update(current)
+
+    // schedule the next timer 60 seconds from the current event time
+    ctx.timerService.registerEventTimeTimer(current.lastModified + 60000)
+  }
+
+  override def onTimer(
+      timestamp: Long, 
+      ctx: KeyedProcessFunction[Tuple, (String, String), (String, Long)]#OnTimerContext, 
+      out: Collector[(String, Long)]): Unit = {
+
+    state.value match {
+      case CountWithTimestamp(key, count, lastModified) if (timestamp == lastModified + 60000) =>
+        out.collect((key, count))
+      case _ =>
+    }
+  }
+}
+```
 ### Sink
 - `writeAsText()`
 - `print()`
@@ -507,7 +577,7 @@ class MyProcessWindowFunction extends ProcessWindowFunction[Double, (String, Dou
 
 ### Allowed Lateness
 > 指定允许元素迟到的时间长度，迟到但未丢失的数据可能会使window重新触发，例如EventTimeTrigger
-### side output
+### Side Output
 > 用于配置迟到元素的输出
 ```scala
 val lateOutputTag = OutputTag[T]("late-data")

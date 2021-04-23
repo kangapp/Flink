@@ -44,9 +44,9 @@
       - [Watermarks in Parallel Streams](#watermarks-in-parallel-streams)
       - [介绍Watermark Strategies](#介绍watermark-strategies)
       - [Using Watermark Strategies](#using-watermark-strategies)
-      - [Watermark Generators](#watermark-generators)
       - [处理空闲数据源](#处理空闲数据源)
       - [Writing WatermarkGenerators](#writing-watermarkgenerators)
+      - [内置Watermark Generators](#内置watermark-generators)
     - [Lateness](#lateness)
     - [Windowing](#windowing)
   - [Table API & SQL](#table-api--sql)
@@ -662,16 +662,6 @@ withTimestampsAndWatermarks
         .reduce( (a, b) => a.add(b) )
         .addSink(...)
 ```
-#### Watermark Generators
-- 时间单调递增
-```scala
-WatermarkStrategy.forMonotonousTimestamps()
-```
-- 固定的延迟
-```scala
-WatermarkStrategy
-  .forBoundedOutOfOrderness(Duration.ofSeconds(10))
-```
 #### 处理空闲数据源
 > 当某些分区空闲时，watermark不会更新因为是取所有并行的最小值
 ```scala
@@ -732,6 +722,16 @@ class PunctuatedAssigner extends AssignerWithPunctuatedWatermarks[MyEvent] {
         // don't need to do anything because we emit in reaction to events above
     }
 }
+```
+#### 内置Watermark Generators
+- 时间单调递增
+```scala
+WatermarkStrategy.forMonotonousTimestamps()
+```
+- 固定的延迟
+```scala
+WatermarkStrategy
+  .forBoundedOutOfOrderness(Duration.ofSeconds(10))
 ```
 ### Lateness
 ### Windowing

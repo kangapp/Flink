@@ -44,6 +44,7 @@
       - [Watermarks in Parallel Streams](#watermarks-in-parallel-streams)
       - [介绍Watermark Strategies](#介绍watermark-strategies)
       - [Using Watermark Strategies](#using-watermark-strategies)
+      - [Watermark Generators](#watermark-generators)
       - [处理空闲数据源](#处理空闲数据源)
       - [Writing WatermarkGenerators](#writing-watermarkgenerators)
     - [Lateness](#lateness)
@@ -660,6 +661,16 @@ withTimestampsAndWatermarks
         .window(TumblingEventTimeWindows.of(Time.seconds(10)))
         .reduce( (a, b) => a.add(b) )
         .addSink(...)
+```
+#### Watermark Generators
+- 时间单调递增
+```scala
+WatermarkStrategy.forMonotonousTimestamps()
+```
+- 固定的延迟
+```scala
+WatermarkStrategy
+  .forBoundedOutOfOrderness(Duration.ofSeconds(10))
 ```
 #### 处理空闲数据源
 > 当某些分区空闲时，watermark不会更新因为是取所有并行的最小值

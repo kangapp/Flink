@@ -605,6 +605,34 @@ val lateStream = result.getSideOutput(lateOutputTag)
 #### Watermarks in Parallel Streams  
 - Watermarks are generated at, or directly after, source functions. Each parallel subtask of a source function usually generates its watermarks `independently`  
 - Some operators consume multiple input streams; a union, for example, or operators following a keyBy(…) or partition(…) function. Such an operator’s current event time is the `minimum` of its input streams’ event times
+#### 介绍Watermark Strategies
+> TimestampAssigner:从数据抽取某些字段的时间戳  
+> WatermarkGenerator：告诉系统时间发生的时间
+```scala
+public interface WatermarkStrategy<T> extends TimestampAssignerSupplier<T>, WatermarkGeneratorSupplier<T>{
+
+    /**
+     * Instantiates a {@link TimestampAssigner} for assigning timestamps according to this
+     * strategy.
+     */
+    @Override
+    TimestampAssigner<T> createTimestampAssigner(TimestampAssignerSupplier.Context context);
+
+    /**
+     * Instantiates a WatermarkGenerator that generates watermarks according to this strategy.
+     */
+    @Override
+    WatermarkGenerator<T> createWatermarkGenerator(WatermarkGeneratorSupplier.Context context);
+}
+```
+> 可以通过WatermarkStrategy提供的静态方法来创建
+```scala
+WatermarkStrategy
+  .forBoundedOutOfOrderness[(Long, String)](Duration.ofSeconds(20))
+  .withTimestampAssigner(new SerializableTimestampAssigner[(Long, String)] {
+    override def extractTimestamp(element: (Long, String), recordTimestamp: Long): Long = element._1
+  })
+```
 ### Lateness
 ### Windowing
 ## Table API & SQL

@@ -38,6 +38,11 @@
       - [内置evictors](#内置evictors)
     - [Allowed Lateness](#allowed-lateness)
     - [Side Output](#side-output)
+  - [State](#state)
+    - [Keyed State](#keyed-state)
+    - [State TTL](#state-ttl)
+      - [configuration opteions](#configuration-opteions)
+      - [Cleanup of Expired State](#cleanup-of-expired-state)
   - [Time](#time)
     - [语义](#语义)
     - [Watermarks](#watermarks)
@@ -601,6 +606,42 @@ val result = input
 
 val lateStream = result.getSideOutput(lateOutputTag)
 ```
+
+## State
+
+### Keyed State
+>只能用于KeyedStream，所有状态仅限于当前输入元素的key
+- ValueState<T>
+- ListState<T>
+- ReducingState<T>
+- AggregatingState<IN, OUT>
+- MapState<UK, UV>
+
+### State TTL
+>A time-to-live (TTL) can be assigned to the keyed state of any type. If a TTL is configured and a state value has expired, the stored value will be cleaned up on a best effort basis
+```scala
+import org.apache.flink.api.common.state.StateTtlConfig
+import org.apache.flink.api.common.state.ValueStateDescriptor
+import org.apache.flink.api.common.time.Time
+
+val ttlConfig = StateTtlConfig
+    .newBuilder(Time.seconds(1))
+    .setUpdateType(StateTtlConfig.UpdateType.OnCreateAndWrite)
+    .setStateVisibility(StateTtlConfig.StateVisibility.NeverReturnExpired)
+    .build
+    
+val stateDescriptor = new ValueStateDescriptor[String]("text state", classOf[String])
+stateDescriptor.enableTimeToLive(ttlConfig)
+```
+#### configuration opteions
+- newBuilder方法的第一个参数是必需的，代表生存的时间值
+- setUpdateType配置何时刷新state TTL
+  - StateTtlConfig.UpdateType.OnCreateAndWrite（default）
+  - StateTtlConfig.UpdateType.OnReadAndWrite
+- setStateVisibility配置读取时是否返回未清除的过期值
+  - StateTtlConfig.StateVisibility.NeverReturnExpired（default）
+  - StateTtlConfig.StateVisibility.ReturnExpiredIfNotCleanedUp
+#### [Cleanup of Expired State](https://ci.apache.org/projects/flink/flink-docs-release-1.12/dev/stream/state/state.html#cleanup-of-expired-state)
 
 ## Time
 ### 语义

@@ -43,6 +43,16 @@
     - [State TTL](#state-ttl)
       - [configuration opteions](#configuration-opteions)
       - [Cleanup of Expired State](#cleanup-of-expired-state)
+    - [Broadcast State](#broadcast-state)
+    - [Checkpointing](#checkpointing)
+      - [先决条件](#先决条件)
+      - [启用和配置](#启用和配置)
+  - [Connectors](#connectors)
+    - [DataStream Connectors](#datastream-connectors)
+      - [Kafka](#kafka)
+        - [Dependency](#dependency)
+        - [Kafka Consumer](#kafka-consumer)
+        - [Kafka Producer](#kafka-producer)
   - [Time](#time)
     - [语义](#语义)
     - [Watermarks](#watermarks)
@@ -643,6 +653,115 @@ stateDescriptor.enableTimeToLive(ttlConfig)
   - StateTtlConfig.StateVisibility.ReturnExpiredIfNotCleanedUp
 #### [Cleanup of Expired State](https://ci.apache.org/projects/flink/flink-docs-release-1.12/dev/stream/state/state.html#cleanup-of-expired-state)
 
+### Broadcast State
+
+### Checkpointing
+
+#### 先决条件
+- 持久化数据源，在一定时间内可以重播记录。持久化消息队列（kafka...）或文件系统（HDFS...）
+- State持久化存储，通常是分布式文件系统（HDFS...）
+#### 启用和配置
+```scala
+val env = StreamExecutionEnvironment.getExecutionEnvironment()
+
+// start a checkpoint every 1000 ms
+env.enableCheckpointing(1000)
+
+// advanced options:
+
+// set mode to exactly-once (this is the default)
+env.getCheckpointConfig.setCheckpointingMode(CheckpointingMode.EXACTLY_ONCE)
+
+// make sure 500 ms of progress happen between checkpoints
+env.getCheckpointConfig.setMinPauseBetweenCheckpoints(500)
+
+// checkpoints have to complete within one minute, or are discarded
+env.getCheckpointConfig.setCheckpointTimeout(60000)
+
+// prevent the tasks from failing if an error happens in their checkpointing, the checkpoint will just be declined.
+env.getCheckpointConfig.setFailTasksOnCheckpointingErrors(false)
+
+// allow only one checkpoint to be in progress at the same time
+env.getCheckpointConfig.setMaxConcurrentCheckpoints(1)
+
+// enables the experimental unaligned checkpoints
+env.getCheckpointConfig.enableUnalignedCheckpoints()
+```
+
+## Connectors
+### DataStream Connectors
+#### Kafka
+
+##### Dependency
+```xml
+<dependency>
+	<groupId>org.apache.flink</groupId>
+	<artifactId>flink-connector-kafka_2.11</artifactId>
+	<version>1.12.0</version>
+</dependency>
+```
+##### Kafka Consumer
+```scala
+val properties = new Properties()
+properties.setProperty("bootstrap.servers", "localhost:9092")
+properties.setProperty("group.id", "test")
+val stream = env
+    .addSource(new FlinkKafkaConsumer[String]("topic", new SimpleStringSchema(), properties))
+```
+> kafka开始消费位置配置
+```scala
+val env = StreamExecutionEnvironment.getExecutionEnvironment()
+
+val myConsumer = new FlinkKafkaConsumer[String](...)
+myConsumer.setStartFromEarliest()      // start from the earliest record possible
+myConsumer.setStartFromLatest()        // start from the latest record
+myConsumer.setStartFromTimestamp(...)  // start from specified epoch timestamp (milliseconds)
+myConsumer.setStartFromGroupOffsets()  // the default behaviour
+
+val stream = env.addSource(myConsumer)
+```
+> 指定每个分区开始消费的偏移量，如果读取的分区没有指定偏移量，将退回到该分区的默认消费组偏移行为.当job失败自动重启或手动从savepoint还原时，不会影响分区的起始位置。
+```scala
+val specificStartOffsets = new java.util.HashMap[KafkaTopicPartition, java.lang.Long]()
+specificStartOffsets.put(new KafkaTopicPartition("myTopic", 0), 23L)
+specificStartOffsets.put(new KafkaTopicPartition("myTopic", 1), 31L)
+specificStartOffsets.put(new KafkaTopicPartition("myTopic", 2), 43L)
+
+myConsumer.setStartFromSpecificOffsets(specificStartOffsets)
+```
+> kafka消费者偏移量提交行为配置
+- 未启用checkpointing：使用kafka客户端定期提交偏移量的功能
+- 启用checkpointing：当checkpoint完成时，kafka comsumer将提交保存在检查点状态的偏移量
+> kafka流中包含当前事件时间watermark的特殊记录，kafka消费者允许指定watermark strategy.  
+> 可以使用自定义策略或者预定义的策略
+```scala
+val properties = new Properties()
+properties.setProperty("bootstrap.servers", "localhost:9092")
+properties.setProperty("group.id", "test")
+
+val myConsumer =
+    new FlinkKafkaConsumer("topic", new SimpleStringSchema(), properties);
+myConsumer.assignTimestampsAndWatermarks(
+    WatermarkStrategy.
+        .forBoundedOutOfOrderness(Duration.ofSeconds(20)))
+
+val stream = env.addSource(myConsumer)
+```
+##### Kafka Producer
+```scala
+val stream: DataStream[String] = ...
+
+val properties = new Properties
+properties.setProperty("bootstrap.servers", "localhost:9092")
+
+val myProducer = new FlinkKafkaProducer[String](
+        "my-topic",                  // target topic
+        new SimpleStringSchema(),    // serialization schema
+        properties,                  // producer config
+        FlinkKafkaProducer.Semantic.EXACTLY_ONCE) // fault-tolerance
+
+stream.addSink(myProducer)
+```
 ## Time
 ### 语义
 - Event Time

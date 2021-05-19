@@ -65,12 +65,13 @@
     - [Lateness](#lateness)
     - [Windowing](#windowing)
   - [Table API & SQL](#table-api--sql)
+    - [Structure of Table API and SQL Programs](#structure-of-table-api-and-sql-programs)
     - [TableEnvironment](#tableenvironment)
-      - [用不同的planner创建TableEnvironment](#用不同的planner创建tableenvironment)
     - [Table](#table)
       - [创建表](#创建表)
       - [查询表](#查询表)
-    - [集成DataStreamhe和DataSet](#集成datastreamhe和dataset)
+    - [Emit a Table](#emit-a-table)
+    - [集成DataStream和DataSet](#集成datastream和dataset)
 
 ## 概述
 ### 特点
@@ -896,60 +897,34 @@ WatermarkStrategy
 ### Lateness
 ### Windowing
 ## Table API & SQL
+### Structure of Table API and SQL Programs
+```scala
+// create a TableEnvironment for batch or streaming execution
+val tableEnv = ... // see "Create a TableEnvironment" section
 
+// create an input Table
+tableEnv.executeSql("CREATE TEMPORARY TABLE table1 ... WITH ( 'connector' = ... )")
+// register an output Table
+tableEnv.executeSql("CREATE TEMPORARY TABLE outputTable ... WITH ( 'connector' = ... )")
+
+// create a Table from a Table API query
+val table2 = tableEnv.from("table1").select(...)
+// create a Table from a SQL query
+val table3 = tableEnv.sqlQuery("SELECT ... FROM table1 ...")
+
+// emit a Table API result Table to a TableSink, same for SQL result
+val tableResult = table2.executeInsert("outputTable")
+tableResult...
+```
 ### TableEnvironment
-> The TableEnvironment is a central concept of the Table API and SQL integration
+> The TableEnvironment is the entrypoint for Table API and SQL integration
 - 在内部catalog中注册表
 - 注册catalogs
 - 加载可插拔的模块
 - 执行sql查询
 - 注册用户自定义函数
 - 将DataStream或DataSet转化为Table
-- 持有对`ExecutionEnvironment`或`StreamExecutionEnvironment`的引用
-
-#### 用不同的planner创建TableEnvironment
-```scala
-// **********************
-// FLINK STREAMING QUERY
-// **********************
-import org.apache.flink.streaming.api.scala.StreamExecutionEnvironment
-import org.apache.flink.table.api.EnvironmentSettings
-import org.apache.flink.table.api.bridge.scala.StreamTableEnvironment
-
-val fsSettings = EnvironmentSettings.newInstance().useOldPlanner().inStreamingMode().build()
-val fsEnv = StreamExecutionEnvironment.getExecutionEnvironment
-val fsTableEnv = StreamTableEnvironment.create(fsEnv, fsSettings)
-// or val fsTableEnv = TableEnvironment.create(fsSettings)
-
-// ******************
-// FLINK BATCH QUERY
-// ******************
-import org.apache.flink.api.scala.ExecutionEnvironment
-import org.apache.flink.table.api.bridge.scala.BatchTableEnvironment
-
-val fbEnv = ExecutionEnvironment.getExecutionEnvironment
-val fbTableEnv = BatchTableEnvironment.create(fbEnv)
-
-// **********************
-// BLINK STREAMING QUERY
-// **********************
-import org.apache.flink.streaming.api.scala.StreamExecutionEnvironment
-import org.apache.flink.table.api.EnvironmentSettings
-import org.apache.flink.table.api.bridge.scala.StreamTableEnvironment
-
-val bsEnv = StreamExecutionEnvironment.getExecutionEnvironment
-val bsSettings = EnvironmentSettings.newInstance().useBlinkPlanner().inStreamingMode().build()
-val bsTableEnv = StreamTableEnvironment.create(bsEnv, bsSettings)
-// or val bsTableEnv = TableEnvironment.create(bsSettings)
-
-// ******************
-// BLINK BATCH QUERY
-// ******************
-import org.apache.flink.table.api.{EnvironmentSettings, TableEnvironment}
-
-val bbSettings = EnvironmentSettings.newInstance().useBlinkPlanner().inBatchMode().build()
-val bbTableEnv = TableEnvironment.create(bbSettings)
-```
+- 持有对`StreamExecutionEnvironment`的引用
 
 ### Table
 `identifier`
@@ -977,9 +952,11 @@ tableEnvironment
   .inAppendMode()
   .createTemporaryTable("MyTable")
 ```
-
+```scala
+tableEnvironment.executeSql("CREATE [TEMPORARY] TABLE MyTable (...) WITH (...)")
+```
 #### 查询表
-- Table API
+- [Table API](https://ci.apache.org/projects/flink/flink-docs-release-1.13/docs/dev/table/tableapi/)
 ```scala
 // get a TableEnvironment
 val tableEnv = ... // see "Create a TableEnvironment" section
@@ -994,7 +971,9 @@ val revenue = orders
   .groupBy($"cID", $"cName")
   .select($"cID", $"cName", $"revenue".sum AS "revSum")
 ```
-- SQL
+- [SQL](https://ci.apache.org/projects/flink/flink-docs-release-1.13/docs/dev/table/sql/overview/)    
+
+`query and return the result as a Table`
 ```scala
 // get a TableEnvironment
 val tableEnv = ... // see "Create a TableEnvironment" section
@@ -1009,8 +988,49 @@ val revenue = tableEnv.sqlQuery("""
   |GROUP BY cID, cName
   """.stripMargin)
 ```
+`update query that inserts its result into a registered table`
+```scala
+// get a TableEnvironment
+val tableEnv = ... // see "Create a TableEnvironment" section
 
-### 集成DataStreamhe和DataSet
+// register "Orders" table
+// register "RevenueFrance" output table
+
+// compute revenue for all customers from France and emit to "RevenueFrance"
+tableEnv.executeSql("""
+  |INSERT INTO RevenueFrance
+  |SELECT cID, cName, SUM(revenue) AS revSum
+  |FROM Orders
+  |WHERE cCountry = 'FRANCE'
+  |GROUP BY cID, cName
+  """.stripMargin)
+
+```
+
+### Emit a Table
+```scala
+// get a TableEnvironment
+val tableEnv = ... // see "Create a TableEnvironment" section
+
+// create an output Table
+val schema = new Schema()
+    .field("a", DataTypes.INT())
+    .field("b", DataTypes.STRING())
+    .field("c", DataTypes.BIGINT())
+
+tableEnv.connect(new FileSystem().path("/path/to/file"))
+    .withFormat(new Csv().fieldDelimiter('|').deriveSchema())
+    .withSchema(schema)
+    .createTemporaryTable("CsvSinkTable")
+
+// compute a result Table using Table API operators and/or SQL queries
+val result: Table = ...
+
+// emit the result Table to the registered TableSink
+result.executeInsert("CsvSinkTable")
+
+```
+### 集成DataStream和DataSet
 - 创建临时视图
 ```scala
 // get TableEnvironment 

@@ -43,6 +43,9 @@
     - [State TTL](#state-ttl)
       - [configuration opteions](#configuration-opteions)
       - [Cleanup of Expired State](#cleanup-of-expired-state)
+    - [Operator State](#operator-state)
+    - [Using Operator State](#using-operator-state)
+      - [CheckpointedFunction](#checkpointedfunction)
     - [Broadcast State](#broadcast-state)
     - [Checkpointing](#checkpointing)
       - [先决条件](#先决条件)
@@ -622,12 +625,17 @@ val lateStream = result.getSideOutput(lateOutputTag)
 
 ### Keyed State
 >只能用于KeyedStream，所有状态仅限于当前输入元素的key
-- ValueState<T>
+- ValueState<T>  
 - ListState<T>
 - ReducingState<T>
 - AggregatingState<IN, OUT>
 - MapState<UK, UV>
-
+>state通过RuntimeContext来访问，因此只有在富函数才有可能  
+- ValueState<T> getState(ValueStateDescriptor<T>)
+- ReducingState<T> getReducingState(ReducingStateDescriptor<T>)
+- ListState<T> getListState(ListStateDescriptor<T>)
+- AggregatingState<IN, OUT> getAggregatingState(AggregatingStateDescriptor<IN, ACC, OUT>)
+- MapState<UK, UV> getMapState(MapStateDescriptor<UK, UV>)
 ### State TTL
 >A time-to-live (TTL) can be assigned to the keyed state of any type. If a TTL is configured and a state value has expired, the stored value will be cleaned up on a best effort basis
 ```scala
@@ -654,6 +662,20 @@ stateDescriptor.enableTimeToLive(ttlConfig)
   - StateTtlConfig.StateVisibility.ReturnExpiredIfNotCleanedUp
 #### [Cleanup of Expired State](https://ci.apache.org/projects/flink/flink-docs-release-1.12/dev/stream/state/state.html#cleanup-of-expired-state)
 
+### Operator State
+>Operator State (or non-keyed state)是和一个并行operator实例绑定的，并且支持在实例之前重新分配状态，通常使用在source/sink的实现和没有分区键的场景
+
+
+### Using Operator State
+>To use operator state, a stateful function can implement the CheckpointedFunction interface.
+#### CheckpointedFunction
+```scala
+void snapshotState(FunctionSnapshotContext context) throws Exception;
+
+void initializeState(FunctionInitializationContext context) throws Exception;
+```
+- snapshotState()
+- initializeState()
 ### Broadcast State
 
 ### Checkpointing

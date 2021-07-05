@@ -46,6 +46,7 @@
     - [Operator State](#operator-state)
     - [Using Operator State](#using-operator-state)
       - [CheckpointedFunction](#checkpointedfunction)
+      - [redistribution](#redistribution)
     - [Broadcast State](#broadcast-state)
     - [Checkpointing](#checkpointing)
       - [先决条件](#先决条件)
@@ -674,8 +675,103 @@ void snapshotState(FunctionSnapshotContext context) throws Exception;
 
 void initializeState(FunctionInitializationContext context) throws Exception;
 ```
-- snapshotState()
-- initializeState()
+- snapshotState()  
+  每当checkpoint执行时调用
+- initializeState()  
+  函数第一次初始化或者从较早的checkpoint恢复时调用
+#### redistribution 
+- Even-split redistribution  
+  getListState(descriptor)
+- Union redistribution  
+  getUnionListState(descriptor)
+
+>SinkFunction 
+```scala
+class BufferingSink(threshold: Int = 0)
+  extends SinkFunction[(String, Int)]
+    with CheckpointedFunction {
+
+  @transient
+  private var checkpointedState: ListState[(String, Int)] = _
+
+  private val bufferedElements = ListBuffer[(String, Int)]()
+
+  override def invoke(value: (String, Int), context: Context): Unit = {
+    bufferedElements += value
+    if (bufferedElements.size == threshold) {
+      for (element <- bufferedElements) {
+        // send it to the sink
+      }
+      bufferedElements.clear()
+    }
+  }
+
+  override def snapshotState(context: FunctionSnapshotContext): Unit = {
+    checkpointedState.clear()
+    for (element <- bufferedElements) {
+      checkpointedState.add(element)
+    }
+  }
+
+  override def initializeState(context: FunctionInitializationContext): Unit = {
+    val descriptor = new ListStateDescriptor[(String, Int)](
+      "buffered-elements",
+      TypeInformation.of(new TypeHint[(String, Int)]() {})
+    )
+
+    checkpointedState = context.getOperatorStateStore.getListState(descriptor)
+
+    if(context.isRestored) {
+      for(element <- checkpointedState.get()) {
+        bufferedElements += element
+      }
+    }
+  }
+
+}
+```
+>Source Functions
+```scala
+class CounterSource
+       extends RichParallelSourceFunction[Long]
+       with CheckpointedFunction {
+
+  @volatile
+  private var isRunning = true
+
+  private var offset = 0L
+  private var state: ListState[Long] = _
+
+  override def run(ctx: SourceFunction.SourceContext[Long]): Unit = {
+    val lock = ctx.getCheckpointLock
+
+    while (isRunning) {
+      // output and state update are atomic
+      lock.synchronized({
+        ctx.collect(offset)
+
+        offset += 1
+      })
+    }
+  }
+
+  override def cancel(): Unit = isRunning = false
+  
+  override def initializeState(context: FunctionInitializationContext): Unit = {
+    state = context.getOperatorStateStore.getListState(
+      new ListStateDescriptor[Long]("state", classOf[Long]))
+
+    for (l <- state.get().asScala) {
+      offset = l
+    }
+  }
+
+  override def snapshotState(context: FunctionSnapshotContext): Unit = {
+    state.clear()
+    state.add(offset)
+  }
+}
+```
 ### Broadcast State
 
 ### Checkpointing

@@ -48,6 +48,10 @@
       - [CheckpointedFunction](#checkpointedfunction)
       - [redistribution](#redistribution)
     - [Broadcast State](#broadcast-state)
+      - [案例说明](#案例说明)
+      - [流数据](#流数据)
+      - [连接流](#连接流)
+    - [KeyedBroadcastProcessFunction匹配逻辑](#keyedbroadcastprocessfunction匹配逻辑)
     - [Checkpointing](#checkpointing)
       - [先决条件](#先决条件)
       - [启用和配置](#启用和配置)
@@ -773,7 +777,135 @@ class CounterSource
 }
 ```
 ### Broadcast State
+#### 案例说明
+>流数据包含不同的颜色和形状的对象，找到符合特定规则的相同颜色的对象对，例：一个矩形后跟着三角形
+#### 流数据
+- Item Steram
+>取相同颜色的对象，需按颜色分区
+```scala
+// key the items by color
+KeyedStream<Item, Color> colorPartitionedStream = itemStream
+                        .keyBy(new KeySelector<Item, Color>(){...});
+```
+- Rules Stream
+>广播规则数据到所有的下游任务
+```scala
+// a map descriptor to store the name of the rule (string) and the rule itself.
+MapStateDescriptor<String, Rule> ruleStateDescriptor = new MapStateDescriptor<>(
+			"RulesBroadcastState",
+			BasicTypeInfo.STRING_TYPE_INFO,
+			TypeInformation.of(new TypeHint<Rule>() {}));
+		
+// broadcast the rules and create the broadcast state
+BroadcastStream<Rule> ruleBroadcastStream = ruleStream
+                        .broadcast(ruleStateDescriptor);
+```
+#### 连接流
+>non-broadcasted stream调用connect()方法，BroadcastStream 作为参数，会生成BroadcastConnectedStream，然后可以用CoProcessFunction调用process()方法，方法包含我们的匹配逻辑，non-broadcasted stream的类型决定调用方法的类型
+- keyed  
+>KeyedBroadcastProcessFunction.
+```scala
+public abstract class KeyedBroadcastProcessFunction<KS, IN1, IN2, OUT> {
 
+    public abstract void processElement(IN1 value, ReadOnlyContext ctx, Collector<OUT> out) throws Exception;
+
+    public abstract void processBroadcastElement(IN2 value, Context ctx, Collector<OUT> out) throws Exception;
+
+    public void onTimer(long timestamp, OnTimerContext ctx, Collector<OUT> out) throws Exception;
+}
+```
+- non-keyed  
+>BroadcastProcessFunction.
+```scala
+public abstract class BroadcastProcessFunction<IN1, IN2, OUT> extends BaseBroadcastProcessFunction {
+
+    public abstract void processElement(IN1 value, ReadOnlyContext ctx, Collector<OUT> out) throws Exception;
+
+    public abstract void processBroadcastElement(IN2 value, Context ctx, Collector<OUT> out) throws Exception;
+}
+```
+> 连接流
+```scala
+DataStream<String> output = colorPartitionedStream
+                 .connect(ruleBroadcastStream)
+                 .process(
+                     
+                     // type arguments in our KeyedBroadcastProcessFunction represent: 
+                     //   1. the key of the keyed stream
+                     //   2. the type of elements in the non-broadcast side
+                     //   3. the type of elements in the broadcast side
+                     //   4. the type of the result, here a string
+                     
+                     new KeyedBroadcastProcessFunction<Color, Item, Rule, String>() {
+                         // my matching logic
+                     }
+                 );
+```
+### KeyedBroadcastProcessFunction匹配逻辑
+```scala
+new KeyedBroadcastProcessFunction<Color, Item, Rule, String>() {
+
+    // store partial matches, i.e. first elements of the pair waiting for their second element
+    // we keep a list as we may have many first elements waiting
+    private final MapStateDescriptor<String, List<Item>> mapStateDesc =
+        new MapStateDescriptor<>(
+            "items",
+            BasicTypeInfo.STRING_TYPE_INFO,
+            new ListTypeInfo<>(Item.class));
+
+    // identical to our ruleStateDescriptor above
+    private final MapStateDescriptor<String, Rule> ruleStateDescriptor = 
+        new MapStateDescriptor<>(
+            "RulesBroadcastState",
+            BasicTypeInfo.STRING_TYPE_INFO,
+            TypeInformation.of(new TypeHint<Rule>() {}));
+
+    @Override
+    public void processBroadcastElement(Rule value,
+                                        Context ctx,
+                                        Collector<String> out) throws Exception {
+        ctx.getBroadcastState(ruleStateDescriptor).put(value.name, value);
+    }
+
+    @Override
+    public void processElement(Item value,
+                               ReadOnlyContext ctx,
+                               Collector<String> out) throws Exception {
+
+        final MapState<String, List<Item>> state = getRuntimeContext().getMapState(mapStateDesc);
+        final Shape shape = value.getShape();
+    
+        for (Map.Entry<String, Rule> entry :
+                ctx.getBroadcastState(ruleStateDescriptor).immutableEntries()) {
+            final String ruleName = entry.getKey();
+            final Rule rule = entry.getValue();
+    
+            List<Item> stored = state.get(ruleName);
+            if (stored == null) {
+                stored = new ArrayList<>();
+            }
+    
+            if (shape == rule.second && !stored.isEmpty()) {
+                for (Item i : stored) {
+                    out.collect("MATCH: " + i + " - " + value);
+                }
+                stored.clear();
+            }
+    
+            // there is no else{} to cover if rule.first == rule.second
+            if (shape.equals(rule.first)) {
+                stored.add(value);
+            }
+    
+            if (stored.isEmpty()) {
+                state.remove(ruleName);
+            } else {
+                state.put(ruleName, stored);
+            }
+        }
+    }
+}
+```
 ### Checkpointing
 
 #### 先决条件

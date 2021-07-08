@@ -51,10 +51,11 @@
       - [案例说明](#案例说明)
       - [流数据](#流数据)
       - [连接流](#连接流)
-    - [KeyedBroadcastProcessFunction匹配逻辑](#keyedbroadcastprocessfunction匹配逻辑)
+      - [KeyedBroadcastProcessFunction匹配逻辑](#keyedbroadcastprocessfunction匹配逻辑)
     - [Checkpointing](#checkpointing)
       - [先决条件](#先决条件)
       - [启用和配置](#启用和配置)
+      - [Checkpoint Storage](#checkpoint-storage)
   - [Connectors](#connectors)
     - [DataStream Connectors](#datastream-connectors)
       - [Kafka](#kafka)
@@ -841,7 +842,7 @@ DataStream<String> output = colorPartitionedStream
                      }
                  );
 ```
-### KeyedBroadcastProcessFunction匹配逻辑
+#### KeyedBroadcastProcessFunction匹配逻辑
 ```scala
 new KeyedBroadcastProcessFunction<Color, Item, Rule, String>() {
 
@@ -938,6 +939,10 @@ env.getCheckpointConfig.setMaxConcurrentCheckpoints(1)
 // enables the experimental unaligned checkpoints
 env.getCheckpointConfig.enableUnalignedCheckpoints()
 ```
+
+#### Checkpoint Storage
+- JobManagerCheckpointStorage
+- The FileSystemCheckpointStorage
 
 ## Connectors
 ### DataStream Connectors

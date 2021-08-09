@@ -7,7 +7,8 @@
     - [集群剖析](#集群剖析)
       - [JobManager](#jobmanager)
       - [TaskManage](#taskmanage)
-    - [任务和算子链](#任务和算子链)
+    - [Tasks and Operator Chains](#tasks-and-operator-chains)
+    - [Task Slots and Resources](#task-slots-and-resources)
   - [官网案例演示](#官网案例演示)
   - [DataStream API](#datastream-api)
     - [官网案例](#官网案例)
@@ -114,7 +115,16 @@
 #### TaskManage
 > 运行数据流任务，缓存和交换数据流；TaskManage最小的资源调度单位是task slot，多个operator可以在一个task slot中运行
 
-### 任务和算子链
+### Tasks and Operator Chains
+> 对于分布式运行，flink把算子子任务串在task中，每个task都在一个线程中执行，可以减少线程到线程切换和缓存的开销，增加整体吞吐量，同时减少延迟。  
+> 链接行为可配置  
+> 
+![](image/operation_chain.png) 
+
+### Task Slots and Resources
+- 每一个worker（TaskManager）都是JVM进程，可以在独立的线程中运行一个或多个子任务，拥有至少一个task slot
+- 每一个task slot代表TaskManager资源的固定子集，只分隔内存，不隔离CPU
+- flink默认允许子任务共享slot，即使是不同task的子任务，只要是来自同一个job
 
 ## 官网案例演示
 

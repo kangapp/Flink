@@ -3,6 +3,11 @@
 - [Flink](#flink)
   - [概述](#概述)
     - [特点](#特点)
+  - [架构](#架构)
+    - [集群剖析](#集群剖析)
+      - [JobManager](#jobmanager)
+      - [TaskManage](#taskmanage)
+    - [任务和算子链](#任务和算子链)
   - [官网案例演示](#官网案例演示)
   - [DataStream API](#datastream-api)
     - [官网案例](#官网案例)
@@ -93,6 +98,21 @@
 - 低延迟，每秒处理百万事件，毫秒延迟
 - 高可用，动态扩展
 
+## 架构
+### 集群剖析
+>flink运行时由两类进程组成：一个JobManager和一个或多个TaskManager
+#### JobManager
+> 有多项协调Flink应用分布式执行相关的职责：安排任务，对完成或失败的任务作出反应，协调检查点，协调故障恢复
+- ResourceManager
+> 负责集群资源的分配，管理task slots（flink集群资源调度的单元）；flink针对不同的环境和资源提供实现了多种ResourceManager
+-  Dispatcher
+> 提供REST接口用来提交flink应用去运行，并为每个已提交的作业启动JobMaster，启动flink WebUI来提供作业运行的信息
+-  JobMaster
+> 负责管理单个JobGraph运行，多个作业可以同时在flink集群上运行，每个作业都有自己的JobMaster
+#### TaskManage
+> 运行数据流任务，缓存和交换数据流；TaskManage最小的资源调度单位是task slot，多个operator可以在一个task slot中运行
+
+### 任务和算子链
 
 ## 官网案例演示
 

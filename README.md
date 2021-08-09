@@ -100,7 +100,9 @@
 
 ## 架构
 ### 集群剖析
->flink运行时由两类进程组成：一个JobManager和一个或多个TaskManager
+>flink运行时由两类进程组成：一个JobManager和一个或多个TaskManager  
+
+![flink架构](image/flink_arc.png)
 #### JobManager
 > 有多项协调Flink应用分布式执行相关的职责：安排任务，对完成或失败的任务作出反应，协调检查点，协调故障恢复
 - ResourceManager

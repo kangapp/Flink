@@ -90,6 +90,9 @@
     - [Translate and Execute a Query](#translate-and-execute-a-query)
     - [Dynamic Tables](#dynamic-tables)
       - [Dynamic Tables & Continuous Queries](#dynamic-tables--continuous-queries)
+      - [Query Restrictions](#query-restrictions)
+      - [Table to Stream Conversion](#table-to-stream-conversion)
+    - [Table API](#table-api)
 
 ## 概述
 ### 特点
@@ -1379,6 +1382,35 @@ val retractStream: DataStream[(Boolean, Row)] = tableEnv.toRetractStream[Row](ta
 > Querying dynamic tables yields a Continuous Query.A continuous query never terminates and produces dynamic results - another dynamic table. The query continuously updates its (dynamic) result table to reflect changes on its (dynamic) input tables.
 
 ![动态表](image/dynamicTable.png)
-- A stream is converted into a dynamic table.
-- A continuous query is evaluated on the dynamic table yielding a new dynamic table.
+- A stream is converted into a dynamic table.  
+  ![stream](image/stream-dynamic.png)
+- A continuous query is evaluated on the dynamic table yielding a new dynamic table.  
+  `The first query updates previously emitted results, i.e., the changelog stream that defines the result table contains INSERT and UPDATE changes.`
+  ![cq1](image/cq1.png)  
+  `The second query only appends to the result table, i.e., the result table’s changelog stream only consists of INSERT changes.`
+  ![cq2](image/cq2.png)
 - The resulting dynamic table is converted back into a stream.
+
+#### Query Restrictions
+- State Size
+  ```sql
+  SELECT user, COUNT(url)
+  FROM clicks
+  GROUP BY user;
+  ```
+- Computing Updates
+  ```sql
+  SELECT user, RANK() OVER (ORDER BY lastAction)
+  FROM (
+  SELECT user, MAX(cTime) AS lastAction FROM clicks GROUP BY user
+  );
+  ```
+#### Table to Stream Conversion
+- Append-only stream
+- Retract stream  
+add messages and retract messages
+- Upsert stream  
+upsert messages and delete messages
+
+### Table API
+

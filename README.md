@@ -87,6 +87,9 @@
       - [查询表](#查询表)
     - [Emit a Table](#emit-a-table)
     - [集成DataStream和DataSet](#集成datastream和dataset)
+    - [Translate and Execute a Query](#translate-and-execute-a-query)
+    - [Dynamic Tables](#dynamic-tables)
+      - [Dynamic Tables & Continuous Queries](#dynamic-tables--continuous-queries)
 
 ## 概述
 ### 特点
@@ -1368,3 +1371,14 @@ val dsTuple: DataStream[(String, Int)] dsTuple =
 //   True is INSERT, false is DELETE.
 val retractStream: DataStream[(Boolean, Row)] = tableEnv.toRetractStream[Row](table)
 ```
+### Translate and Execute a Query
+
+### Dynamic Tables
+
+#### Dynamic Tables & Continuous Queries
+> Querying dynamic tables yields a Continuous Query.A continuous query never terminates and produces dynamic results - another dynamic table. The query continuously updates its (dynamic) result table to reflect changes on its (dynamic) input tables.
+
+![动态表](image/dynamicTable.png)
+- A stream is converted into a dynamic table.
+- A continuous query is evaluated on the dynamic table yielding a new dynamic table.
+- The resulting dynamic table is converted back into a stream.

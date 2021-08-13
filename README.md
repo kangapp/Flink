@@ -93,6 +93,10 @@
       - [Query Restrictions](#query-restrictions)
       - [Table to Stream Conversion](#table-to-stream-conversion)
     - [Table API](#table-api)
+      - [Example](#example)
+      - [Operations](#operations)
+    - [SQL](#sql)
+      - [Windowing table-valued functions](#windowing-table-valued-functions)
 
 ## 概述
 ### 特点
@@ -1219,6 +1223,18 @@ tableResult...
 - 将DataStream或DataSet转化为Table
 - 持有对`StreamExecutionEnvironment`的引用
 
+```scala
+import org.apache.flink.table.api.{EnvironmentSettings, TableEnvironment}
+
+val settings = EnvironmentSettings
+    .newInstance()
+    .inStreamingMode()
+    //.inBatchMode()
+    .build()
+
+val tEnv = TableEnvironment.create(setting)
+```
+
 ### Table
 `identifier`
 > A TableEnvironment maintains a map of catalogs of tables which are created with an identifier. Each identifier consists of 3 parts: catalog name, database name and object name   
@@ -1414,3 +1430,59 @@ upsert messages and delete messages
 
 ### Table API
 
+#### Example
+```scala
+import org.apache.flink.api.scala._
+import org.apache.flink.table.api._
+import org.apache.flink.table.api.bridge.scala._
+
+// environment configuration
+val settings = EnvironmentSettings
+    .newInstance()
+    .inStreamingMode()
+    .build();
+
+val tEnv = TableEnvironment.create(settings);
+
+// register Orders table in table environment
+// ...
+
+// specify table program
+val orders = tEnv.from("Orders") // schema (a, b, c, rowtime)
+
+val result = orders
+               .groupBy($"a")
+               .select($"a", $"b".count as "cnt")
+               .toDataSet[Row] // conversion to DataSet
+               .print()
+```
+```scala
+// environment configuration
+// ...
+
+// specify table program
+val orders: Table = tEnv.from("Orders") // schema (a, b, c, rowtime)
+
+val result: Table = orders
+        .filter($"a".isNotNull && $"b".isNotNull && $"c".isNotNull)
+        .select($"a".lowerCase() as "a", $"b", $"rowtime")
+        .window(Tumble over 1.hour on $"rowtime" as "hourlyWindow")
+        .groupBy($"hourlyWindow", $"a")
+        .select($"a", $"hourlyWindow".end as "hour", $"b".avg as "avgBillingAmount")
+```
+
+#### Operations
+- Scan, Projection, and Filter 
+- Column Operations
+- Aggregations
+- Joins
+- Set Operations
+- OrderBy, Offset & Fetch
+- Group Windows
+- Over Windows
+- Row-based Operations
+
+### SQL
+
+#### Windowing table-valued functions
+> flink定义的多态表函数，TVF是传统窗口分组函数的替代，窗口分组函数只可以实现窗口聚合，而TVF还可以实现Window TopN, Window Join

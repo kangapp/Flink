@@ -97,6 +97,10 @@
       - [Operations](#operations)
     - [SQL](#sql)
       - [Windowing table-valued functions](#windowing-table-valued-functions)
+      - [Window Aggregation](#window-aggregation)
+      - [Group Aggregation](#group-aggregation)
+      - [Over Aggregation](#over-aggregation)
+      - [Joins](#joins)
 
 ## 概述
 ### 特点
@@ -1486,3 +1490,41 @@ val result: Table = orders
 
 #### Windowing table-valued functions
 > flink定义的多态表函数，TVF是传统窗口分组函数的替代，窗口分组函数只可以实现窗口聚合，而TVF还可以实现Window TopN, Window Join
+- Tumble Windows
+- Hop Windows
+- Cumulate Windows
+- Session Windows (will be supported soon)
+
+#### Window Aggregation
+- Windowing TVFs
+- GROUPING SETS
+- Cascading Window Aggregation
+
+#### Group Aggregation
+
+#### Over Aggregation
+```scala
+SELECT
+  agg_func(agg_col) OVER (
+    [PARTITION BY col1[, col2, ...]]
+    ORDER BY time_col
+    range_definition),
+  ...
+FROM ...
+```
+- ORDER BY
+- PARTITION BY
+- range_definition  
+
+`RANGE intervals`
+```
+RANGE BETWEEN INTERVAL '30' MINUTE PRECEDING AND CURRENT ROW
+```
+`ROW intervals`
+```
+ROWS BETWEEN 10 PRECEDING AND CURRENT ROW WINDOW
+```
+
+#### Joins
+- Regular Joins
+- 

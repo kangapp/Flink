@@ -1526,5 +1526,7 @@ ROWS BETWEEN 10 PRECEDING AND CURRENT ROW WINDOW
 ```
 
 #### Joins
+>By default, the order of joins is not optimized. Tables are joined in the order in which they are specified in the FROM clause. You can tweak the performance of your join queries, by listing the tables with the lowest update frequency first and the tables with the highest update frequency last
 - Regular Joins
-- 
+- Interval Joins
+- Temporal Joins

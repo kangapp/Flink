@@ -35,6 +35,8 @@
       - [ProcessWindowFunction](#processwindowfunction)
       - [ProcessWindowFunction with Incremental Aggregation](#processwindowfunction-with-incremental-aggregation)
       - [Using per-window state in ProcessWindowFunction](#using-per-window-state-in-processwindowfunction)
+    - [Window Join](#window-join)
+      - [基本用法](#基本用法)
     - [Triggers](#triggers)
       - [触发器（Trigger）针对不同事件有不同的方法](#触发器trigger针对不同事件有不同的方法)
       - [`TriggerResult`返回的动作](#triggerresult返回的动作)
@@ -101,6 +103,8 @@
       - [Group Aggregation](#group-aggregation)
       - [Over Aggregation](#over-aggregation)
       - [Joins](#joins)
+  - [Flink CEP](#flink-cep)
+    - [Getting Started](#getting-started)
 
 ## 概述
 ### 特点
@@ -626,6 +630,17 @@ class MyProcessWindowFunction extends ProcessWindowFunction[Double, (String, Dou
 > There are two methods on the Context object that a process() invocation receives that allow access to the two types of state:
 - globalState(), which allows access to keyed state that is not scoped to a window
 - windowState(), which allows access to keyed state that is also scoped to the window
+
+### Window Join
+
+#### 基本用法
+```scala
+stream.join(otherStream)
+    .where(<KeySelector>)
+    .equalTo(<KeySelector>)
+    .window(<WindowAssigner>)
+    .apply(<JoinFunction>)
+```
 
 ### Triggers
 #### 触发器（Trigger）针对不同事件有不同的方法
@@ -1530,3 +1545,15 @@ ROWS BETWEEN 10 PRECEDING AND CURRENT ROW WINDOW
 - Regular Joins
 - Interval Joins
 - Temporal Joins
+
+## Flink CEP
+> Complex event processing for Flink
+
+### Getting Started
+```scala
+<dependency>
+    <groupId>org.apache.flink</groupId>
+    <artifactId>flink-cep-scala_2.11</artifactId>
+    <version>1.14.0</version>
+</dependency>
+```

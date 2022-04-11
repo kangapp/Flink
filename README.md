@@ -98,7 +98,7 @@
       - [Example](#example)
       - [Operations](#operations)
     - [SQL](#sql)
-      - [Windowing table-valued functions](#windowing-table-valued-functions)
+      - [Windowing table-valued functions(1.13)](#windowing-table-valued-functions113)
       - [Window Aggregation](#window-aggregation)
       - [Group Aggregation](#group-aggregation)
       - [Over Aggregation](#over-aggregation)
@@ -1503,11 +1503,56 @@ val result: Table = orders
 
 ### SQL
 
-#### Windowing table-valued functions
-> flink定义的多态表函数，TVF是传统窗口分组函数的替代，窗口分组函数只可以实现窗口聚合，而TVF还可以实现Window TopN, Window Join
+#### Windowing table-valued functions(1.13)
+> flink定义的多态表函数，TVF是传统窗口分组函数的替代，窗口分组函数只可以实现窗口聚合，而TVF还可以实现Window TopN, Window Join。包含原始关系的所有列并附加`window_start`、`window_end`、`window_time`三列.当前flink不支持单独使用tvf，应该配合聚合操作来使用。
 - Tumble Windows
+```sql
+-- apply aggregation on the tumbling windowed table
+Flink SQL> SELECT window_start, window_end, SUM(price)
+  FROM TABLE(
+    TUMBLE(TABLE Bid, DESCRIPTOR(bidtime), INTERVAL '10' MINUTES))
+  GROUP BY window_start, window_end;
++------------------+------------------+-------+
+|     window_start |       window_end | price |
++------------------+------------------+-------+
+| 2020-04-15 08:00 | 2020-04-15 08:10 | 11.00 |
+| 2020-04-15 08:10 | 2020-04-15 08:20 | 10.00 |
++------------------+------------------+-------+
+```
 - Hop Windows
+```sql
+-- apply aggregation on the tumbling windowed table
+Flink SQL> SELECT window_start, window_end, SUM(price)
+  FROM TABLE(
+    TUMBLE(TABLE Bid, DESCRIPTOR(bidtime), INTERVAL '10' MINUTES))
+  GROUP BY window_start, window_end;
++------------------+------------------+-------+
+|     window_start |       window_end | price |
++------------------+------------------+-------+
+| 2020-04-15 08:00 | 2020-04-15 08:10 | 11.00 |
+| 2020-04-15 08:10 | 2020-04-15 08:20 | 10.00 |
++------------------+------------------+-------+
+```
 - Cumulate Windows
+```sql
+-- apply aggregation on the cumulating windowed table
+> SELECT window_start, window_end, SUM(price)
+  FROM TABLE(
+    CUMULATE(TABLE Bid, DESCRIPTOR(bidtime), INTERVAL '2' MINUTES, INTERVAL '10' MINUTES))
+  GROUP BY window_start, window_end;
++------------------+------------------+-------+
+|     window_start |       window_end | price |
++------------------+------------------+-------+
+| 2020-04-15 08:00 | 2020-04-15 08:06 |  4.00 |
+| 2020-04-15 08:00 | 2020-04-15 08:08 |  6.00 |
+| 2020-04-15 08:00 | 2020-04-15 08:10 | 11.00 |
+| 2020-04-15 08:10 | 2020-04-15 08:12 |  3.00 |
+| 2020-04-15 08:10 | 2020-04-15 08:14 |  4.00 |
+| 2020-04-15 08:10 | 2020-04-15 08:16 |  4.00 |
+| 2020-04-15 08:10 | 2020-04-15 08:18 | 10.00 |
+| 2020-04-15 08:10 | 2020-04-15 08:20 | 10.00 |
++------------------+------------------+-------+
+```
 - Session Windows (will be supported soon)
 
 #### Window Aggregation

@@ -1557,8 +1557,66 @@ Flink SQL> SELECT window_start, window_end, SUM(price)
 
 #### Window Aggregation
 - Windowing TVFs
-- GROUPING SETS
+- GROUPING SETS    
+
+`GROUPING SETS`
+```sql
+Flink SQL> SELECT window_start, window_end, supplier_id, SUM(price) as price
+  FROM TABLE(
+    TUMBLE(TABLE Bid, DESCRIPTOR(bidtime), INTERVAL '10' MINUTES))
+  GROUP BY window_start, window_end, GROUPING SETS ((supplier_id), ());
++------------------+------------------+-------------+-------+
+|     window_start |       window_end | supplier_id | price |
++------------------+------------------+-------------+-------+
+| 2020-04-15 08:00 | 2020-04-15 08:10 |      (NULL) | 11.00 |
+| 2020-04-15 08:00 | 2020-04-15 08:10 |   supplier2 |  5.00 |
+| 2020-04-15 08:00 | 2020-04-15 08:10 |   supplier1 |  6.00 |
+| 2020-04-15 08:10 | 2020-04-15 08:20 |      (NULL) | 10.00 |
+| 2020-04-15 08:10 | 2020-04-15 08:20 |   supplier2 |  9.00 |
+| 2020-04-15 08:10 | 2020-04-15 08:20 |   supplier1 |  1.00 |
++------------------+------------------+-------------+-------+
+```
+`ROLLUP`
+```sql
+SELECT window_start, window_end, supplier_id, SUM(price) as price
+FROM TABLE(
+    TUMBLE(TABLE Bid, DESCRIPTOR(bidtime), INTERVAL '10' MINUTES))
+GROUP BY window_start, window_end, ROLLUP (supplier_id);
+```
+`CUBE`
+```sql
+SELECT window_start, window_end, item, supplier_id, SUM(price) as price
+  FROM TABLE(
+    TUMBLE(TABLE Bid, DESCRIPTOR(bidtime), INTERVAL '10' MINUTES))
+  GROUP BY window_start, window_end, CUBE (supplier_id, item);
+
+SELECT window_start, window_end, item, supplier_id, SUM(price) as price
+  FROM TABLE(
+    TUMBLE(TABLE Bid, DESCRIPTOR(bidtime), INTERVAL '10' MINUTES))
+  GROUP BY window_start, window_end, GROUPING SETS (
+      (supplier_id, item),
+      (supplier_id      ),
+      (             item),
+      (                 )
+)
+```
 - Cascading Window Aggregation
+
+`window_start` 和 `window_end` 列是常规时间戳列，而不是时间属性，不能用作后续基于时间操作的时间属性，而`window_time`可以作为窗口的时间属性进行传播
+```sql
+-- tumbling 5 minutes for each supplier_id
+CREATE VIEW window1 AS
+SELECT window_start, window_end, window_time as rowtime, SUM(price) as partial_price
+  FROM TABLE(
+    TUMBLE(TABLE Bid, DESCRIPTOR(bidtime), INTERVAL '5' MINUTES))
+  GROUP BY supplier_id, window_start, window_end, window_time;
+
+-- tumbling 10 minutes on the first window
+SELECT window_start, window_end, SUM(partial_price) as total_price
+  FROM TABLE(
+      TUMBLE(TABLE window1, DESCRIPTOR(rowtime), INTERVAL '10' MINUTES))
+  GROUP BY window_start, window_end
+```
 
 #### Group Aggregation
 

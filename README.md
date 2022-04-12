@@ -103,6 +103,8 @@
       - [Group Aggregation](#group-aggregation)
       - [Over Aggregation](#over-aggregation)
       - [Joins](#joins)
+      - [Top-N](#top-n)
+      - [Window Top-N](#window-top-n)
   - [Flink CEP](#flink-cep)
     - [Getting Started](#getting-started)
 
@@ -1762,6 +1764,91 @@ SELECT o.order_id, o.total, c.country, c.zip
 FROM Orders AS o
   JOIN Customers FOR SYSTEM_TIME AS OF o.proc_time AS c
     ON o.customer_id = c.id;
+```
+
+#### Top-N
+`Flink结合over window和filter条件来表达Top-N查询`
+```sql
+CREATE TABLE ShopSales (
+  product_id   STRING,
+  category     STRING,
+  product_name STRING,
+  sales        BIGINT
+) WITH (...);
+
+SELECT *
+FROM (
+  SELECT *,
+    ROW_NUMBER() OVER (PARTITION BY category ORDER BY sales DESC) AS row_num
+  FROM ShopSales)
+WHERE row_num <= 5
+```
+`无排名的输出优化`
+```sql
+CREATE TABLE ShopSales (
+  product_id   STRING,
+  category     STRING,
+  product_name STRING,
+  sales        BIGINT
+) WITH (...);
+
+-- omit row_num field from the output
+SELECT product_id, category, product_name, sales
+FROM (
+  SELECT *,
+    ROW_NUMBER() OVER (PARTITION BY category ORDER BY sales DESC) AS row_num
+  FROM ShopSales)
+WHERE row_num <= 5
+```
+#### Window Top-N
+`限制:`目前仅支持Window Aggregation后的Top-N，未来会支持Windowing TVF后的Top-N(1.13)
+```sql
+-- tables must have time attribute, e.g. `bidtime` in this table
+Flink SQL> desc Bid;
++-------------+------------------------+------+-----+--------+---------------------------------+
+|        name |                   type | null | key | extras |                       watermark |
++-------------+------------------------+------+-----+--------+---------------------------------+
+|     bidtime | TIMESTAMP(3) *ROWTIME* | true |     |        | `bidtime` - INTERVAL '1' SECOND |
+|       price |         DECIMAL(10, 2) | true |     |        |                                 |
+|        item |                 STRING | true |     |        |                                 |
+| supplier_id |                 STRING | true |     |        |                                 |
++-------------+------------------------+------+-----+--------+---------------------------------+
+
+Flink SQL> SELECT * FROM Bid;
++------------------+-------+------+-------------+
+|          bidtime | price | item | supplier_id |
++------------------+-------+------+-------------+
+| 2020-04-15 08:05 |  4.00 |    A |   supplier1 |
+| 2020-04-15 08:06 |  4.00 |    C |   supplier2 |
+| 2020-04-15 08:07 |  2.00 |    G |   supplier1 |
+| 2020-04-15 08:08 |  2.00 |    B |   supplier3 |
+| 2020-04-15 08:09 |  5.00 |    D |   supplier4 |
+| 2020-04-15 08:11 |  2.00 |    B |   supplier3 |
+| 2020-04-15 08:13 |  1.00 |    E |   supplier1 |
+| 2020-04-15 08:15 |  3.00 |    H |   supplier2 |
+| 2020-04-15 08:17 |  6.00 |    F |   supplier5 |
++------------------+-------+------+-------------+
+
+Flink SQL> SELECT *
+  FROM (
+    SELECT *, ROW_NUMBER() OVER (PARTITION BY window_start, window_end ORDER BY price DESC) as rownum
+    FROM (
+      SELECT window_start, window_end, supplier_id, SUM(price) as price, COUNT(*) as cnt
+      FROM TABLE(
+        TUMBLE(TABLE Bid, DESCRIPTOR(bidtime), INTERVAL '10' MINUTES))
+      GROUP BY window_start, window_end, supplier_id
+    )
+  ) WHERE rownum <= 3;
++------------------+------------------+-------------+-------+-----+--------+
+|     window_start |       window_end | supplier_id | price | cnt | rownum |
++------------------+------------------+-------------+-------+-----+--------+
+| 2020-04-15 08:00 | 2020-04-15 08:10 |   supplier1 |  6.00 |   2 |      1 |
+| 2020-04-15 08:00 | 2020-04-15 08:10 |   supplier4 |  5.00 |   1 |      2 |
+| 2020-04-15 08:00 | 2020-04-15 08:10 |   supplier2 |  4.00 |   1 |      3 |
+| 2020-04-15 08:10 | 2020-04-15 08:20 |   supplier5 |  6.00 |   1 |      1 |
+| 2020-04-15 08:10 | 2020-04-15 08:20 |   supplier2 |  3.00 |   1 |      2 |
+| 2020-04-15 08:10 | 2020-04-15 08:20 |   supplier3 |  2.00 |   1 |      3 |
++------------------+------------------+-------------+-------+-----+--------+
 ```
 ## Flink CEP
 > Complex event processing for Flink

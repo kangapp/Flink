@@ -1619,6 +1619,10 @@ SELECT window_start, window_end, SUM(partial_price) as total_price
 ```
 
 #### Group Aggregation
+- Group Aggregation
+- DISTINCT Aggregation
+- GROUPING SETS
+- HAVING
 
 #### Over Aggregation
 ```scala
@@ -1642,13 +1646,123 @@ RANGE BETWEEN INTERVAL '30' MINUTE PRECEDING AND CURRENT ROW
 ```
 ROWS BETWEEN 10 PRECEDING AND CURRENT ROW WINDOW
 ```
+- 案例  
+
+`为每个订单计算在当前订单前一个小时相同产品的订单金额总和`
+```sql
+SELECT order_id, order_time, amount,
+  SUM(amount) OVER (
+    PARTITION BY product
+    ORDER BY order_time
+    RANGE BETWEEN INTERVAL '1' HOUR PRECEDING AND CURRENT ROW
+  ) AS one_hour_prod_amount_sum
+FROM Orders
+```
+```sql
+SELECT order_id, order_time, amount,
+  SUM(amount) OVER w AS sum_amount,
+  AVG(amount) OVER w AS avg_amount
+FROM Orders
+WINDOW w AS (
+  PARTITION BY product
+  ORDER BY order_time
+  RANGE BETWEEN INTERVAL '1' HOUR PRECEDING AND CURRENT ROW)
+```
 
 #### Joins
 >By default, the order of joins is not optimized. Tables are joined in the order in which they are specified in the FROM clause. You can tweak the performance of your join queries, by listing the tables with the lowest update frequency first and the tables with the highest update frequency last
 - Regular Joins
 - Interval Joins
-- Temporal Joins
+```sql
+SELECT *
+FROM Orders o, Shipments s
+WHERE o.id = s.order_id
+AND o.order_time BETWEEN s.ship_time - INTERVAL '4' HOUR AND s.ship_time
+-- 区间连接条件示例
+ltime = rtime
+ltime >= rtime AND ltime < rtime + INTERVAL '10' MINUTE
+ltime BETWEEN rtime - INTERVAL '10' SECOND AND rtime + INTERVAL '5' SECOND
+```
+- Temporal Joins  
 
+`Event Time Temporal Join`  
+```sql
+--确保连接两边设置了正确的水印
+--连接 versioned table
+
+-- Create a table of orders. This is a standard
+-- append-only dynamic table.
+CREATE TABLE orders (
+    order_id    STRING,
+    price       DECIMAL(32,2),
+    currency    STRING,
+    order_time  TIMESTAMP(3),
+    WATERMARK FOR order_time AS order_time
+) WITH (/* ... */);
+
+-- Define a versioned table of currency rates. 
+-- This could be from a change-data-capture
+-- such as Debezium, a compacted Kafka topic, or any other
+-- way of defining a versioned table. 
+CREATE TABLE currency_rates (
+    currency STRING,
+    conversion_rate DECIMAL(32, 2),
+    update_time TIMESTAMP(3) METADATA FROM `values.source.timestamp` VIRTUAL,
+    WATERMARK FOR update_time AS update_time,
+    PRIMARY KEY(currency) NOT ENFORCED
+) WITH (
+   'connector' = 'kafka',
+   'value.format' = 'debezium-json',
+   /* ... */
+);
+
+SELECT 
+     order_id,
+     price,
+     currency,
+     conversion_rate,
+     order_time,
+FROM orders
+LEFT JOIN currency_rates FOR SYSTEM_TIME AS OF orders.order_time
+ON orders.currency = currency_rates.currency;
+
+order_id  price  currency  conversion_rate  order_time
+========  =====  ========  ===============  =========
+o_001     11.11  EUR       1.14             12:00:00
+o_002     12.51  EUR       1.10             12:06:00
+```
+`Processing Time Temporal Join`
+```sql
+--连接使用处理时间属性与外部版本化表的最新版本关联
+SELECT
+  o.amount, o.currency, r.rate, o.amount * r.rate
+FROM
+  Orders AS o
+  JOIN LatestRates FOR SYSTEM_TIME AS OF o.proctime AS r
+  ON r.currency = o.currency
+```
+- Lookup Join  
+
+使用外部系统查询的数据丰富表，使用`Processing Time Temporal Join`语法
+```sql
+-- Customers is backed by the JDBC connector and can be used for lookup joins
+CREATE TEMPORARY TABLE Customers (
+  id INT,
+  name STRING,
+  country STRING,
+  zip STRING
+) WITH (
+  'connector' = 'jdbc',
+  'url' = 'jdbc:mysql://mysqlhost:3306/customerdb',
+  'table-name' = 'customers'
+);
+
+-- enrich each order with customer information
+SELECT o.order_id, o.total, c.country, c.zip
+FROM Orders AS o
+  JOIN Customers FOR SYSTEM_TIME AS OF o.proc_time AS c
+    ON o.customer_id = c.id;
+```
 ## Flink CEP
 > Complex event processing for Flink
 

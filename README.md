@@ -108,6 +108,7 @@
     - [functions](#functions)
       - [System Functions](#system-functions)
       - [User-defined Functions](#user-defined-functions)
+    - [性能调优](#性能调优)
   - [Flink CEP](#flink-cep)
     - [Getting Started](#getting-started)
 
@@ -2167,7 +2168,58 @@ class Top2WithRetract
     }
   }
 }
+```
+### 性能调优
+- MiniBatch Aggregation  
+  
+`分组聚合算子通常是一个接一个处理输入数据，会增加状态后端的开销，在数据倾斜的情况会很容易产生背压的问题`
+```scala
+// instantiate table environment
+val tEnv: TableEnvironment = ...
 
+// access flink configuration
+val configuration = tEnv.getConfig().getConfiguration()
+// set low-level key-value options
+configuration.setString("table.exec.mini-batch.enabled", "true") // enable mini-batch optimization
+configuration.setString("table.exec.mini-batch.allow-latency", "5 s") // use 5 seconds to buffer input records
+configuration.setString("table.exec.mini-batch.size", "5000") // the maximum number of records can be buffered by each aggregate operator task
+```
+- Local-Global Aggregation
+
+`旨在解决数据倾斜问题，将分组聚合分为两个阶段，本地聚合+全局聚合`
+```scala
+// instantiate table environment
+val tEnv: TableEnvironment = ...
+
+// access flink configuration
+val configuration = tEnv.getConfig().getConfiguration()
+// set low-level key-value options
+configuration.setString("table.exec.mini-batch.enabled", "true") // local-global aggregation depends on mini-batch is enabled
+configuration.setString("table.exec.mini-batch.allow-latency", "5 s")
+configuration.setString("table.exec.mini-batch.size", "5000")
+configuration.setString("table.optimizer.agg-phase-strategy", "TWO_PHASE") // enable two-phase, i.e. local-global aggregation
+```
+- Split Distinct Aggregation
+`优化去重聚合的场景`
+```scala
+// instantiate table environment
+val tEnv: TableEnvironment = ...
+
+tEnv.getConfig         // access high-level configuration
+  .getConfiguration    // set low-level key-value options
+  .setString("table.optimizer.distinct-agg.split.enabled", "true")  // enable distinct agg split
+```
+- Use FILTER Modifier on Distinct Aggregates
+
+`优化不同条件去重聚合的场景`
+```sql
+SELECT
+ day,
+ COUNT(DISTINCT user_id) AS total_uv,
+ COUNT(DISTINCT user_id) FILTER (WHERE flag IN ('android', 'iphone')) AS app_uv,
+ COUNT(DISTINCT user_id) FILTER (WHERE flag IN ('wap', 'other')) AS web_uv
+FROM T
+GROUP BY day
 ```
 ## Flink CEP
 > Complex event processing for Flink

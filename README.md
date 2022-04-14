@@ -1981,7 +1981,7 @@ class WeightedAvg extends AggregateFunction[java.lang.Long, WeightedAvgAccumulat
     acc.sum += iValue * iWeight
     acc.count += iWeight
   }
-
+-- 在over窗口聚合需要
   def retract(acc: WeightedAvgAccumulator, iValue: java.lang.Long, iWeight: java.lang.Integer): Unit = {
     acc.sum -= iValue * iWeight
     acc.count -= iWeight

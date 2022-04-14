@@ -105,6 +105,9 @@
       - [Joins](#joins)
       - [Top-N](#top-n)
       - [Window Top-N](#window-top-n)
+    - [functions](#functions)
+      - [System Functions](#system-functions)
+      - [User-defined Functions](#user-defined-functions)
   - [Flink CEP](#flink-cep)
     - [Getting Started](#getting-started)
 
@@ -1849,6 +1852,322 @@ Flink SQL> SELECT *
 | 2020-04-15 08:10 | 2020-04-15 08:20 |   supplier2 |  3.00 |   1 |      2 |
 | 2020-04-15 08:10 | 2020-04-15 08:20 |   supplier3 |  2.00 |   1 |      3 |
 +------------------+------------------+-------------+-------+-----+--------+
+```
+
+### functions
+#### System Functions
+- Scalar Functions
+- Aggregate Functions
+#### User-defined Functions
+- Scalar Functions
+```sql
+import org.apache.flink.table.annotation.InputGroup
+import org.apache.flink.table.api._
+import org.apache.flink.table.functions.ScalarFunction
+
+class HashFunction extends ScalarFunction {
+
+  // take any data type and return INT
+  def eval(@DataTypeHint(inputGroup = InputGroup.ANY) o: AnyRef): Int = {
+    o.hashCode()
+  }
+}
+
+val env = TableEnvironment.create(...)
+
+// call function "inline" without registration in Table API
+env.from("MyTable").select(call(classOf[HashFunction], $"myField"))
+
+// register function
+env.createTemporarySystemFunction("HashFunction", classOf[HashFunction])
+
+// call registered function in Table API
+env.from("MyTable").select(call("HashFunction", $"myField"))
+
+// call registered function in SQL
+env.sqlQuery("SELECT HashFunction(myField) FROM MyTable")
+```
+- Table Functions
+```sql
+import org.apache.flink.table.annotation.DataTypeHint
+import org.apache.flink.table.annotation.FunctionHint
+import org.apache.flink.table.api._
+import org.apache.flink.table.functions.TableFunction
+import org.apache.flink.types.Row
+
+@FunctionHint(output = new DataTypeHint("ROW<word STRING, length INT>"))
+class SplitFunction extends TableFunction[Row] {
+
+  def eval(str: String): Unit = {
+    // use collect(...) to emit a row
+    str.split(" ").foreach(s => collect(Row.of(s, Int.box(s.length))))
+  }
+}
+
+val env = TableEnvironment.create(...)
+
+// call function "inline" without registration in Table API
+env
+  .from("MyTable")
+  .joinLateral(call(classOf[SplitFunction], $"myField")
+  .select($"myField", $"word", $"length")
+env
+  .from("MyTable")
+  .leftOuterJoinLateral(call(classOf[SplitFunction], $"myField"))
+  .select($"myField", $"word", $"length")
+
+// rename fields of the function in Table API
+env
+  .from("MyTable")
+  .leftOuterJoinLateral(call(classOf[SplitFunction], $"myField").as("newWord", "newLength"))
+  .select($"myField", $"newWord", $"newLength")
+
+// register function
+env.createTemporarySystemFunction("SplitFunction", classOf[SplitFunction])
+
+// call registered function in Table API
+env
+  .from("MyTable")
+  .joinLateral(call("SplitFunction", $"myField"))
+  .select($"myField", $"word", $"length")
+env
+  .from("MyTable")
+  .leftOuterJoinLateral(call("SplitFunction", $"myField"))
+  .select($"myField", $"word", $"length")
+
+// call registered function in SQL
+env.sqlQuery(
+  "SELECT myField, word, length " +
+  "FROM MyTable, LATERAL TABLE(SplitFunction(myField))")
+env.sqlQuery(
+  "SELECT myField, word, length " +
+  "FROM MyTable " +
+  "LEFT JOIN LATERAL TABLE(SplitFunction(myField)) ON TRUE")
+
+// rename fields of the function in SQL
+env.sqlQuery(
+  "SELECT myField, newWord, newLength " +
+  "FROM MyTable " +
+  "LEFT JOIN LATERAL TABLE(SplitFunction(myField)) AS T(newWord, newLength) ON TRUE")
+```
+- Aggregate Functions
+```sql
+import org.apache.flink.table.api._
+import org.apache.flink.table.functions.AggregateFunction
+
+// mutable accumulator of structured type for the aggregate function
+case class WeightedAvgAccumulator(
+  var sum: Long = 0,
+  var count: Int = 0
+)
+
+// function that takes (value BIGINT, weight INT), stores intermediate results in a structured
+// type of WeightedAvgAccumulator, and returns the weighted average as BIGINT
+class WeightedAvg extends AggregateFunction[java.lang.Long, WeightedAvgAccumulator] {
+
+  override def createAccumulator(): WeightedAvgAccumulator = {
+    WeightedAvgAccumulator()
+  }
+
+  override def getValue(acc: WeightedAvgAccumulator): java.lang.Long = {
+    if (acc.count == 0) {
+      null
+    } else {
+      acc.sum / acc.count
+    }
+  }
+
+  def accumulate(acc: WeightedAvgAccumulator, iValue: java.lang.Long, iWeight: java.lang.Integer): Unit = {
+    acc.sum += iValue * iWeight
+    acc.count += iWeight
+  }
+
+  def retract(acc: WeightedAvgAccumulator, iValue: java.lang.Long, iWeight: java.lang.Integer): Unit = {
+    acc.sum -= iValue * iWeight
+    acc.count -= iWeight
+  }
+
+  def merge(acc: WeightedAvgAccumulator, it: java.lang.Iterable[WeightedAvgAccumulator]): Unit = {
+    val iter = it.iterator()
+    while (iter.hasNext) {
+      val a = iter.next()
+      acc.count += a.count
+      acc.sum += a.sum
+    }
+  }
+
+  def resetAccumulator(acc: WeightedAvgAccumulator): Unit = {
+    acc.count = 0
+    acc.sum = 0L
+  }
+}
+
+val env = TableEnvironment.create(...)
+
+// call function "inline" without registration in Table API
+env
+  .from("MyTable")
+  .groupBy($"myField")
+  .select($"myField", call(classOf[WeightedAvg], $"value", $"weight"))
+
+// register function
+env.createTemporarySystemFunction("WeightedAvg", classOf[WeightedAvg])
+
+// call registered function in Table API
+env
+  .from("MyTable")
+  .groupBy($"myField")
+  .select($"myField", call("WeightedAvg", $"value", $"weight"))
+
+// call registered function in SQL
+env.sqlQuery(
+  "SELECT myField, WeightedAvg(`value`, weight) FROM MyTable GROUP BY myField"
+)
+```
+- Table Aggregate Functions
+
+目前只能在Table API使用，不能在SQL中使用。  
+`emitUpdateWithRetract`比`emitValue`更高效  
+`emitValue`每次都会发出所有结果  
+`emitUpdateWithRetract`只有数据更新时会撤回老数据，发出新的数据
+```sql
+import java.lang.Integer
+import org.apache.flink.api.java.tuple.Tuple2
+import org.apache.flink.table.api._
+import org.apache.flink.table.functions.TableAggregateFunction
+import org.apache.flink.util.Collector
+
+// mutable accumulator of structured type for the aggregate function
+case class Top2Accumulator(
+  var first: Integer,
+  var second: Integer
+)
+
+// function that takes (value INT), stores intermediate results in a structured
+// type of Top2Accumulator, and returns the result as a structured type of Tuple2[Integer, Integer]
+// for value and rank
+class Top2 extends TableAggregateFunction[Tuple2[Integer, Integer], Top2Accumulator] {
+
+  override def createAccumulator(): Top2Accumulator = {
+    Top2Accumulator(
+      Integer.MIN_VALUE,
+      Integer.MIN_VALUE
+    )
+  }
+
+  def accumulate(acc: Top2Accumulator, value: Integer): Unit = {
+    if (value > acc.first) {
+      acc.second = acc.first
+      acc.first = value
+    } else if (value > acc.second) {
+      acc.second = value
+    }
+  }
+
+  def merge(acc: Top2Accumulator, it: java.lang.Iterable[Top2Accumulator]) {
+    val iter = it.iterator()
+    while (iter.hasNext) {
+      val otherAcc = iter.next()
+      accumulate(acc, otherAcc.first)
+      accumulate(acc, otherAcc.second)
+    }
+  }
+
+  def emitValue(acc: Top2Accumulator, out: Collector[Tuple2[Integer, Integer]]): Unit = {
+    // emit the value and rank
+    if (acc.first != Integer.MIN_VALUE) {
+      out.collect(Tuple2.of(acc.first, 1))
+    }
+    if (acc.second != Integer.MIN_VALUE) {
+      out.collect(Tuple2.of(acc.second, 2))
+    }
+  }
+}
+
+val env = TableEnvironment.create(...)
+
+// call function "inline" without registration in Table API
+env
+  .from("MyTable")
+  .groupBy($"myField")
+  .flatAggregate(call(classOf[Top2], $"value"))
+  .select($"myField", $"f0", $"f1")
+
+// call function "inline" without registration in Table API
+// but use an alias for a better naming of Tuple2's fields
+env
+  .from("MyTable")
+  .groupBy($"myField")
+  .flatAggregate(call(classOf[Top2], $"value").as("value", "rank"))
+  .select($"myField", $"value", $"rank")
+
+// register function
+env.createTemporarySystemFunction("Top2", classOf[Top2])
+
+// call registered function in Table API
+env
+  .from("MyTable")
+  .groupBy($"myField")
+  .flatAggregate(call("Top2", $"value").as("value", "rank"))
+  .select($"myField", $"value", $"rank")
+```
+`回撤案例`
+```sql
+import org.apache.flink.api.java.tuple.Tuple2
+import org.apache.flink.table.functions.TableAggregateFunction
+import org.apache.flink.table.functions.TableAggregateFunction.RetractableCollector
+
+case class Top2WithRetractAccumulator(
+  var first: Integer,
+  var second: Integer,
+  var oldFirst: Integer,
+  var oldSecond: Integer
+)
+
+class Top2WithRetract
+    extends TableAggregateFunction[Tuple2[Integer, Integer], Top2WithRetractAccumulator] {
+
+  override def createAccumulator(): Top2WithRetractAccumulator = {
+    Top2WithRetractAccumulator(
+      Integer.MIN_VALUE,
+      Integer.MIN_VALUE,
+      Integer.MIN_VALUE,
+      Integer.MIN_VALUE
+    )
+  }
+
+  def accumulate(acc: Top2WithRetractAccumulator, value: Integer): Unit = {
+    if (value > acc.first) {
+      acc.second = acc.first
+      acc.first = value
+    } else if (value > acc.second) {
+      acc.second = value
+    }
+  }
+
+  def emitUpdateWithRetract(
+      acc: Top2WithRetractAccumulator,
+      out: RetractableCollector[Tuple2[Integer, Integer]])
+    : Unit = {
+    if (!acc.first.equals(acc.oldFirst)) {
+      // if there is an update, retract the old value then emit a new value
+      if (acc.oldFirst != Integer.MIN_VALUE) {
+          out.retract(Tuple2.of(acc.oldFirst, 1))
+      }
+      out.collect(Tuple2.of(acc.first, 1))
+      acc.oldFirst = acc.first
+    }
+    if (!acc.second.equals(acc.oldSecond)) {
+      // if there is an update, retract the old value then emit a new value
+      if (acc.oldSecond != Integer.MIN_VALUE) {
+          out.retract(Tuple2.of(acc.oldSecond, 2))
+      }
+      out.collect(Tuple2.of(acc.second, 2))
+      acc.oldSecond = acc.second
+    }
+  }
+}
+
 ```
 ## Flink CEP
 > Complex event processing for Flink

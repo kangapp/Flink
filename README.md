@@ -98,6 +98,7 @@
       - [Example](#example)
       - [Operations](#operations)
     - [SQL](#sql)
+      - [CREATE Statements](#create-statements)
       - [Windowing table-valued functions(1.13)](#windowing-table-valued-functions113)
       - [Window Aggregation](#window-aggregation)
       - [Group Aggregation](#group-aggregation)
@@ -1509,6 +1510,32 @@ val result: Table = orders
 
 ### SQL
 
+#### CREATE Statements
+- Columns
+```sql
+-- Physical Columns
+-- Metadata Columns，从连接器获取的特定字段，有可读和可写的区分
+CREATE TABLE MyTable (
+  `user_id` BIGINT,
+  `name` STRING,
+  `record_time` TIMESTAMP_LTZ(3) METADATA FROM 'timestamp'    -- reads and writes a Kafka record's timestamp
+) WITH (
+  'connector' = 'kafka'
+  ...
+);
+-- Computed Columns，由其他列计算得到的虚拟列
+```
+- WaterMark
+```sql
+-- 由已存在的列定义，并且该列必须是TIMESTAMP(3)类型
+CREATE TABLE Orders (
+    `user` BIGINT,
+    product STRING,
+    order_time TIMESTAMP(3),
+    WATERMARK FOR order_time AS order_time - INTERVAL '5' SECOND
+) WITH ( . . . );
+```
+- Others
 #### Windowing table-valued functions(1.13)
 > flink定义的多态表函数，TVF是传统窗口分组函数的替代，窗口分组函数只可以实现窗口聚合，而TVF还可以实现Window TopN, Window Join。包含原始关系的所有列并附加`window_start`、`window_end`、`window_time`三列.当前flink不支持单独使用tvf，应该配合聚合操作来使用。
 - Tumble Windows
